@@ -7,8 +7,20 @@
 ### 6. Add David to Contributors
 ### 7. Optimize unit amount of stocks traded
 ### 8. Wait for information on deliverables on: https://globalyouth.wharton.upenn.edu/competitions/investment-competition/deliverables/
-### 9.
-### 10.
+### 四大触发条件：
+### 1.均线支撑：
+### 价格回调至20小时均线附近（±3%）确认
+### 20小时均线仍高于50小时均线（短线趋势未破）
+### *（参数：小时级K线，对应30/60分钟周期）*
+### 2.MFI超卖反弹：
+### MFI(14) 跌破30后快速回升 → 资金回流信号
+### 要求：MFI回升斜率 > 45°（快速脱离超卖区）
+### 3.OBV量价背离终结：
+### 价格创新低，但OBV未创新低（下跌动能衰竭）
+### OBV出现单根2%以上阳量柱（主力吸筹信号）
+### 4.K线+成交量准确入场：
+### 反转K线组合：早晨之星/锤子线/阳包阴（最强买卖点）
+### 成交量放大：当前成交量 > 前3小时均量 200%
 
 
 
