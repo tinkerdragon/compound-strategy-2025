@@ -1,7 +1,7 @@
 # To do:
-### 1. Translate David's requirements to ENG
+### 1. Translate David's requirements to ENG -- DONE
 ### 2. Clarify each candlestick pattern with David
-### 3. Clarify each indicator calculation method with David
+### 3. Clarify each indicator calculation method with David -- DONE
 ### 4. Look for API for Wharton terminal (if none: script automate)
 ### 5. Gaussian Optimization for trend detection weights
 ### 6. Add David to Contributors
