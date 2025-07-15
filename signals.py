@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 '''
 四大触发条件:
@@ -33,13 +35,14 @@ class MarketAnalyzer:
             if target_filename in files:
                 self.data = pd.read_csv(os.path.join(root, target_filename))
                 print(f"Found and loaded: {os.path.join(root, target_filename)}")
+                self.data = self.data.sort_values(by='<DATE>', ascending=False).reset_index(drop=True)
                 found = True
         if not found:
             print(f"{target_filename} not found in any subdirectory.")
     
     def show_data(self):
         """Display the first few rows of the stored data sequence."""
-        return self.data.head()
+        return self.data
 
     def calculate_mfi(self, period=14, slope_window=3):
         df = self.data.copy()
@@ -101,13 +104,7 @@ class MarketAnalyzer:
         self.data = df
         return '20-hour MA calculated.'
     
-    def calculate_indicators(self):
-        """
-        Calculate MFI and OBV indicators and update the data.
-        """
-        self.calculate_mfi()
-        self.calculate_obv()
-        self.calculate_ma()
+    def drop(self):
         self.data = self.data.dropna().reset_index(drop=True)
         return 'Indicators calculated and data updated.'
     
@@ -132,3 +129,48 @@ class MarketAnalyzer:
         )
 
         self.data = df.dropna().reset_index(drop=True)
+
+    def plot(self):
+        bool_cols = ['均线支持', 'MFI超卖反弹', 'OBV量价背离']
+        data = self.data[bool_cols].astype(int).T
+        fig = make_subplots(
+            rows=2, cols=1,
+            shared_xaxes=True,
+            row_heights=[0.6, 0.4],
+            vertical_spacing=0.1,
+            subplot_titles=("Close", "Signal Heatmap")
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=self.data.index,
+                y=self.data['<CLOSE>'],
+                mode='lines',
+                name='Close',
+                line=dict(color='white')
+            ),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Heatmap(
+                z=data.values,
+                x=self.data.index,
+                y=data.index,
+                colorscale='YlGnBu',
+                showscale=True,
+                colorbar=dict(title='Signal'),
+            ),
+            row=2, col=1
+        )
+        fig.update_layout(
+            height=600,
+            title_text=f"Close Prices and Signal Heatmap",
+            xaxis2_title="Index",
+            yaxis_title="Close",
+            yaxis2_title="Signals"
+        )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(14, 17, 23, 1)",
+        )
+
+        return fig
