@@ -20,5 +20,5 @@ if st.button("🚀"):
         analyzer.generate_flags()
         st.dataframe(analyzer.show_data())
         st.plotly_chart(analyzer.plot())
-    except AttributeError as e:
+    except Exception as e:
         st.error(f'No data found for {ticker}. Please check stock list.')
