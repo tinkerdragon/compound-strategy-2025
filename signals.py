@@ -1,110 +1,134 @@
-import yfinance as yf
 import pandas as pd
+import os
+import numpy as np
+
+'''
+四大触发条件:
+1.均线支撑:
+价格回调至20小时均线附近(±3%)确认
+20小时均线仍高于50小时均线(短线趋势未破)
+*(参数:小时级K线, 对应30/60分钟周期)*
+2.MFI超卖反弹:
+MFI(14) 跌破30后快速回升 → 资金回流信号
+要求:MFI回升斜率 > 45°(快速脱离超卖区)
+3.OBV量价背离终结:
+价格创新低, 但OBV未创新低(下跌动能衰竭)
+OBV出现单根2%以上阳量柱(主力吸筹信号)
+4.K线+成交量准确入场:
+反转K线组合:早晨之星/锤子线/阳包阴(最强买卖点)
+成交量放大:当前成交量 > 前3小时均量 200%
+'''
 
 class MarketAnalyzer:
     def __init__(self):
         self.data = []
 
-    def fetch_data(self, ticker, period="50h", interval="1h"):
+    def fetch_data(self, ticker='AAPL'):
         """
-        Fetch hourly market data using yfinance and store it as an attribute.
+        Search all subdirectories for a file named '{ticker}.csv' and print its path if found.
+        """
+        target_filename = f"{ticker}.csv"
+        found = False
+        for root, dirs, files in os.walk(os.getcwd()):
+            if target_filename in files:
+                self.data = pd.read_csv(os.path.join(root, target_filename))
+                print(f"Found and loaded: {os.path.join(root, target_filename)}")
+                found = True
+        if not found:
+            print(f"{target_filename} not found in any subdirectory.")
+    
+    def show_data(self):
+        """Display the first few rows of the stored data sequence."""
+        return self.data.head()
+
+    def calculate_mfi(self, period=14, slope_window=3):
+        df = self.data.copy()
         
-        Args:
-            ticker (str): Ticker symbol (e.g., 'SPY' for S&P 500 ETF).
-            period (str): Period of data to fetch (default: '50h').
-            interval (str): Data interval (default: '1h' for hourly).
-        """
-        try:
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=period, interval=interval)
-            self.data = [
-                {
-                    'high': row['High'],
-                    'low': row['Low'],
-                    'close': row['Close'],
-                    'volume': row['Volume']
-                } for _, row in df.iterrows()
-            ]
-        except Exception as e:
-            print(f"Error fetching data: {e}")
-            self.data = []
-
-    def compute_obv(self):
-        """Compute On-Balance Volume (OBV) for the stored data sequence."""
-        if not self.data:
-            return [0]
-        obv = [0]
-        for i in range(1, len(self.data)):
-            if self.data[i]['close'] > self.data[i-1]['close']:
-                obv.append(obv[-1] + self.data[i]['volume'])
-            elif self.data[i]['close'] < self.data[i-1]['close']:
-                obv.append(obv[-1] - self.data[i]['volume'])
-            else:
-                obv.append(obv[-1])
-        return obv
-
-    def compute_mfi(self, period=14):
-        """Compute Money Flow Index (MFI) for each period where possible."""
-        if not self.data:
-            return [None] * period
-        mfi = [None] * (period - 1)
-        for i in range(period - 1, len(self.data)):
-            window = self.data[i - period + 1: i + 1]
-            typical = [(d['high'] + d['low'] + d['close']) / 3 for d in window]
-            money_flow = [typical[j] * window[j]['volume'] for j in range(period)]
-            positive_mf = sum(money_flow[j] for j in range(1, period) if typical[j] > typical[j-1])
-            negative_mf = sum(money_flow[j] for j in range(1, period) if typical[j] < typical[j-1])
-            if negative_mf == 0:
-                mfi_val = 100
-            else:
-                mfi_ratio = positive_mf / negative_mf
-                mfi_val = 100 - 100 / (1 + mfi_ratio)
-            mfi.append(mfi_val)
-        return mfi
-
-    def analyze(self):
-        """
-        Analyze the market state based on the stored data and return three boolean flags.
+        df['Typical_Price'] = (df['<HIGH>'] + df['<LOW>'] + df['<CLOSE>']) / 3
         
-        Returns:
-            tuple: (flag1, flag2, flag3) indicating if each condition is met.
+        df['Raw_Money_Flow'] = df['Typical_Price'] * df['<VOL>']
+        
+        df['Price_Change'] = df['Typical_Price'].diff()
+        df['Positive_Flow'] = np.where(df['Price_Change'] > 0, df['Raw_Money_Flow'], 0)
+        df['Negative_Flow'] = np.where(df['Price_Change'] < 0, df['Raw_Money_Flow'], 0)
+        
+        positive_sum = df['Positive_Flow'].rolling(window=period).sum()
+        negative_sum = df['Negative_Flow'].rolling(window=period).sum()
+        
+        df['Money_Flow_Ratio'] = positive_sum / (negative_sum + 1e-10)
+        
+        df['INDC_MFI'] = 100 - (100 / (1 + df['Money_Flow_Ratio']))
+
+        # Calculate the slope of MFI using linear regression over a rolling window
+        def calc_slope(series):
+            y = series.values
+            x = np.arange(len(y))
+            if len(y) < slope_window or np.any(np.isnan(y)):
+                return np.nan
+            A = np.vstack([x, np.ones(len(x))]).T
+            m, _ = np.linalg.lstsq(A, y, rcond=None)[0]
+            return m
+
+        df['INDC_MFI_SLOPE'] = df['INDC_MFI'].rolling(window=slope_window).apply(calc_slope, raw=False)
+
+        df = df.drop(['Typical_Price', 'Raw_Money_Flow', 'Price_Change', 
+                    'Positive_Flow', 'Negative_Flow', 'Money_Flow_Ratio'], axis=1).dropna().reset_index(drop=True)
+        
+        self.data = df
+
+        return 'MFI calculation completed.'
+    
+    def calculate_obv(self):
+        df = self.data.copy()
+        
+        df['Price_Change'] = df['<CLOSE>'].diff()
+        df['Direction'] = np.where(df['Price_Change'] > 0, 1, np.where(df['Price_Change'] < 0, -1, 0))
+        
+        df['INDC_OBV'] = (df['<VOL>'] * df['Direction']).cumsum()
+        df = df.drop(['Price_Change', 'Direction'], axis=1).dropna().reset_index(drop=True)
+        
+        self.data = df
+        
+        return 'OBV calculation completed.'
+    
+    def calculate_ma(self):
         """
-        # Require at least 50 periods for all indicators to be fully computable
-        if len(self.data) < 50:
-            return (False, False, False)
-
-        # Extract close prices
-        close_prices = [d['close'] for d in self.data]
-
-        # Compute 20-hour and 50-hour moving averages
-        ma20 = sum(close_prices[-20:]) / 20
-        ma50 = sum(close_prices[-50:]) / 50
-
-        # Flag 1: Price within ±3% of 20-hour MA and 20-hour MA > 50-hour MA
-        price_retrace = abs(self.data[-1]['close'] - ma20) / ma20 <= 0.03
-        ma_condition = ma20 > ma50
-        flag1 = price_retrace and ma_condition
-
-        # Flag 2: MFI drops below 30 and rebounds sharply
-        mfi = self.compute_mfi(14)
-        recent_mfi = mfi[-5:]
-        min_mfi = min(m for m in recent_mfi if m is not None)
-        # Check if MFI was below 30 recently, is now above 30, and increased by >10 points
-        flag2 = any(m < 30 for m in recent_mfi if m is not None) and mfi[-1] > 30 and (mfi[-1] - min_mfi) > 10
-
-        # Flag 3: Price at new low, OBV not at new low, with a high-volume up day
-        obv = self.compute_obv()
-        min_close = min(close_prices[-20:])
-        is_new_low = self.data[-1]['close'] == min_close
-        min_obv = min(obv[-20:])
-        obv_not_new_low = obv[-1] > min_obv
-
-        # Check for a positive volume bar > 2% above average volume
-        avg_volume = sum([d['volume'] for d in self.data[-20:]]) / 20
-        has_positive_volume = any(
-            self.data[-k]['close'] > self.data[-k-1]['close'] and self.data[-k]['volume'] > 1.02 * avg_volume
-            for k in range(1, 6)
+        Calculate the 20-hour moving average of the closing prices.
+        """
+        df = self.data.copy()
+        df['INDC_20HR_MA'] = df['<CLOSE>'].rolling(window=20).mean()
+        df['INDC_50HR_MA'] = df['<CLOSE>'].rolling(window=50).mean()
+        self.data = df
+        return '20-hour MA calculated.'
+    
+    def calculate_indicators(self):
+        """
+        Calculate MFI and OBV indicators and update the data.
+        """
+        self.calculate_mfi()
+        self.calculate_obv()
+        self.calculate_ma()
+        self.data = self.data.dropna().reset_index(drop=True)
+        return 'Indicators calculated and data updated.'
+    
+    def generate_flags(self):
+        df = self.data.copy()
+        df['均线支持'] = np.where(
+            (df['<CLOSE>'] >= df['INDC_20HR_MA'] * 0.97) & (df['<CLOSE>'] <= df['INDC_20HR_MA'] * 1.03) &
+            (df['INDC_20HR_MA'] > df['INDC_50HR_MA']),
+            True, False
         )
-        flag3 = is_new_low and obv_not_new_low and has_positive_volume
 
-        return (flag1, flag2, flag3)
+        df['MFI超卖反弹'] = np.where(
+            (df['INDC_MFI'] < 30) & (df['INDC_MFI'].shift(1) >= 30) & 
+            (df['INDC_MFI_SLOPE'] > 1),
+            True, False
+        )
+
+        df['OBV量价背离'] = np.where(
+            (df['<CLOSE>'] < df['<CLOSE>'].shift(1)) & 
+            (df['INDC_OBV'] >= df['INDC_OBV'].shift(1)),
+            True, False
+        )
+
+        self.data = df.dropna().reset_index(drop=True)
