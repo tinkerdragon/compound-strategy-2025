@@ -3,6 +3,7 @@ import os
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from data import DataManager
 
 '''
 四大触发条件:
@@ -25,20 +26,9 @@ class MarketAnalyzer:
     def __init__(self):
         self.data = []
 
-    def fetch_data(self, ticker='AAPL'):
-        """
-        Search all subdirectories for a file named '{ticker}.csv' and print its path if found.
-        """
-        target_filename = f"{ticker}.csv"
-        found = False
-        for root, dirs, files in os.walk(os.getcwd()):
-            if target_filename in files:
-                self.data = pd.read_csv(os.path.join(root, target_filename))
-                print(f"Found and loaded: {os.path.join(root, target_filename)}")
-                self.data = self.data.sort_values(by='<DATE>', ascending=False).reset_index(drop=True)
-                found = True
-        if not found:
-            print(f"{target_filename} not found in any subdirectory.")
+    def fetch_data(self, ticker, start_date, end_date):
+        manager = DataManager()
+        df = manager.fetch_daily_data(ticker, start_date, end_date)
     
     def show_data(self):
         """Display the first few rows of the stored data sequence."""
