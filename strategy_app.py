@@ -1,13 +1,13 @@
 import streamlit as st
 from signals import MarketAnalyzer
 
-st.title("Market Analyzer")
+st.title("美股技术指标分析")
 
 analyzer = MarketAnalyzer()
 
-ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL):", "AAPL")
-mfi_period = st.slider("MFI Period:", 1, 50, 14)
-mfi_slope_window = st.slider("MFI Slope Window:", 1, 10, 3)
+ticker = st.text_input("输入美股代码 (e.g. AAPL):", "AAPL")
+mfi_period = st.slider("MFI 周期:", 1, 50, 14)
+mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 3)
 
 
 if st.button("🚀"):
