@@ -28,7 +28,7 @@ class MarketAnalyzer:
 
     def fetch_data(self, ticker, start_date, end_date):
         manager = DataManager()
-        df = manager.fetch_daily_data(ticker, start_date, end_date)
+        self.data = manager.fetch_daily_data(ticker, start_date, end_date)
     
     def show_data(self):
         """Display the first few rows of the stored data sequence."""

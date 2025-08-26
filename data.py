@@ -13,12 +13,9 @@ class DataManager:
             'eodhd': os.getenv('EODHD_KEY', ' 68ad4c715bb122.05778507'),
             'twelvedata': os.getenv('TWELVEDATA_KEY', '4b8603d1d3f743458b2adfa2b7e6050f'),
             'polygon': os.getenv('POLYGON_KEY', 'tG46_YlaJWzQJ5CaxgG_pGNdsp7ueXsc'),
-            'finnhub': os.getenv('FINNHUB_KEY', 'd1ost19r01qi9vk19dh0d1ost19r01qi9vk19dhg'),
-            'alpaca_key': os.getenv('ALPACA_KEY', 'CK92VDKIX38FUIC2V3WO'),  # Alpaca needs key
-            'alpaca_secret': os.getenv('ALPACA_SECRET', 'CcMRGQyZlZg90wsXYdccdX5wNhf0b8g9l0RjUq5b'),  # Alpaca needs secret
         }
 
-        self.PROVIDERS = ['alpaca','finnhub','polygon', 'twelvedata','fmp','alpha_vantage','eodhd', 'marketstack']
+        self.PROVIDERS = ['polygon', 'twelvedata','fmp','alpha_vantage','eodhd', 'marketstack']
 
     def fetch_daily_data(self, symbol: str, start_date: str, end_date: str = None) -> pd.DataFrame:
         """
@@ -34,51 +31,21 @@ class DataManager:
             end_date = datetime.today().strftime('%Y-%m-%d')
         
         for provider in self.PROVIDERS:
-            try:
-                df = globals()[f'fetch_from_{provider}'](symbol, start_date, end_date)
+            print(f"Trying provider: {provider}")
+            fetch_func = getattr(self, f'fetch_from_{provider}', None)
+            if fetch_func:
+                df = fetch_func(symbol, start_date, end_date)
                 if not df.empty:
                     print(f"Data fetched successfully from {provider}")
                     return df
-            except Exception as e:
-                print(f"Failed to fetch from {provider}: {e}")
+                else:
+                    print(f"No data from {provider}, trying next...")
+                    continue
+            else:
+                print(f"Function fetch_from_{provider} not found.")
                 continue
         
         raise ValueError("All providers failed to fetch data.")
-
-    def fetch_from_alpaca(self, symbol, start_date, end_date):
-        # Alpaca uses APCA-API-KEY-ID and APCA-API-SECRET-KEY headers
-        headers = {
-            'APCA-API-KEY-ID': self.API_KEYS['alpaca_key'],
-            'APCA-API-SECRET-KEY': self.API_KEYS['alpaca_secret']
-        }
-        url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars?start={start_date}&end={end_date}&timeframe=1Day"
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        bars = resp.json().get('bars', [])
-        df = pd.DataFrame(bars)
-        df = df[['t', 'o', 'h', 'l', 'c', 'v']]
-        df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
-        df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
-        self.data = df
-        return df
-
-    def fetch_from_finnhub(self, symbol, start_date, end_date):
-        start_unix = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-        end_unix = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
-        url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&from={start_unix}&to={end_unix}&token={self.API_KEYS['finnhub']}"
-        resp = requests.get(url)
-        resp.raise_for_status()
-        data = resp.json()
-        df = pd.DataFrame({
-            'date': pd.to_datetime(data['t'], unit='s').strftime('%Y-%m-%d'),
-            'open': data['o'],
-            'high': data['h'],
-            'low': data['l'],
-            'close': data['c'],
-            'volume': data['v']
-        })
-        self.data = df
-        return df
 
     def fetch_from_polygon(self, symbol, start_date, end_date):
         url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}?apiKey={self.API_KEYS['polygon']}"
@@ -89,7 +56,6 @@ class DataManager:
         df = df[['t', 'o', 'h', 'l', 'c', 'v']]
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         df['date'] = pd.to_datetime(df['date'], unit='ms').dt.strftime('%Y-%m-%d')
-        self.data = df
         return df
 
     def fetch_from_twelvedata(self, symbol, start_date, end_date):
@@ -98,9 +64,9 @@ class DataManager:
         resp.raise_for_status()
         values = resp.json().get('values', [])
         df = pd.DataFrame(values)
+        print(url)
         df = df[['datetime', 'open', 'high', 'low', 'close', 'volume']]
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
-        self.data = df
         return df
 
     def fetch_from_fmp(self, symbol, start_date, end_date):
@@ -110,7 +76,6 @@ class DataManager:
         historical = resp.json().get('historical', [])
         df = pd.DataFrame(historical)
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-        self.data = df
         return df
 
     def fetch_from_alpha_vantage(self, symbol, start_date, end_date):
@@ -123,7 +88,6 @@ class DataManager:
         df.reset_index(inplace=True)
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
-        self.data = df
         return df
 
     def fetch_from_eodhd(self, symbol, start_date, end_date):
@@ -133,7 +97,6 @@ class DataManager:
         data = resp.json()
         df = pd.DataFrame(data)
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-        self.data = df
         return df
 
     def fetch_from_marketstack(self, symbol, start_date, end_date):
@@ -144,5 +107,4 @@ class DataManager:
         df = pd.DataFrame(data)
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
         df['date'] = df['date'].str[:10]  # Strip time
-        self.data = df
         return df
