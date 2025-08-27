@@ -24,7 +24,7 @@ class MarketAnalyzer:
 
     def fetch_data(self, ticker, start_date, end_date):
         manager = DataManager()
-        self.data = manager.fetch_daily_data(ticker, start_date, end_date)
+        self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
     
     def show_data(self):
         """Display the first few rows of the stored data sequence."""
@@ -82,7 +82,7 @@ class MarketAnalyzer:
     
     def calculate_ma(self):
         """
-        Calculate the 20-hour moving average of the closing prices.
+        Calculate the moving averages of the closing prices.
         """
         df = self.data.copy()
         df['INDC_20HR_MA'] = df['close'].rolling(window=20).mean()
@@ -94,7 +94,7 @@ class MarketAnalyzer:
         self.data = self.data.dropna().reset_index(drop=True)
         return 'Indicators calculated and data updated.'
     
-    def generate_flags(self):
+    def generate_flags(self, dip_window=5, slope_threshold=1.0):
         df = self.data.copy()
         df['均线支持'] = np.where(
             (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
@@ -103,8 +103,8 @@ class MarketAnalyzer:
         )
 
         df['MFI超卖反弹'] = np.where(
-            (df['INDC_MFI'] < 30) & (df['INDC_MFI'].shift(1) >= 30) & 
-            (df['INDC_MFI_SLOPE'] > 1),
+            (df['INDC_MFI'].rolling(window=dip_window).min() < 30) & 
+            (df['INDC_MFI_SLOPE'] > slope_threshold),
             True, False
         )
 
@@ -126,6 +126,7 @@ class MarketAnalyzer:
             vertical_spacing=0.1,
             subplot_titles=("Close", "Signal Heatmap")
         )
+        # Plot close price
         fig.add_trace(
             go.Scatter(
                 x=self.data.index,
@@ -136,6 +137,29 @@ class MarketAnalyzer:
             ),
             row=1, col=1
         )
+        # Plot 20HR MA
+        fig.add_trace(
+            go.Scatter(
+                x=self.data.index,
+                y=self.data['INDC_20HR_MA'],
+                mode='lines',
+                name='20HR MA',
+                line=dict(color='orange')
+            ),
+            row=1, col=1
+        )
+        # Plot 50HR MA
+        fig.add_trace(
+            go.Scatter(
+                x=self.data.index,
+                y=self.data['INDC_50HR_MA'],
+                mode='lines',
+                name='50HR MA',
+                line=dict(color='blue')
+            ),
+            row=1, col=1
+        )
+        # Plot heatmap
         fig.add_trace(
             go.Heatmap(
                 z=data.values,

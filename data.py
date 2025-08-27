@@ -90,7 +90,7 @@ class DataManager:
         return df
 
     def fetch_from_polygon_hourly(self, symbol, start_date, end_date):
-        url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/hour/{start_date}/{end_date}?apiKey={self.API_KEYS['polygon']}"
+        url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/hour/{start_date}/{end_date}?apiKey={self.API_KEYS['polygon']}&limit=50000"
         resp = requests.get(url)
         resp.raise_for_status()
         results = resp.json().get('results', [])
