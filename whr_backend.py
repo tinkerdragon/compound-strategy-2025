@@ -8,14 +8,14 @@ from data import DataManager
 '''
 四大触发条件:
 2.MFI超卖反弹:
-MFI(14) 跌破30后快速回升 → 资金回流信号
+MFI(14) 跌破30后快速回升 → 资金回流信号
 要求:MFI回升斜率 > 45°(快速脱离超卖区)
 3.OBV量价背离终结:
 价格创新低, 但OBV未创新低(下跌动能衰竭)
 OBV出现单根2%以上阳量柱(主力吸筹信号)
 4.K线+成交量准确入场:
 反转K线组合:早晨之星/锤子线/阳包阴(最强买卖点)
-成交量放大:当前成交量 > 前3小时均量 200%
+成交量放大:当前成交量 > 前3小时均量 200%
 '''
 
 class MarketAnalyzer:
@@ -176,7 +176,21 @@ class MarketAnalyzer:
             title_text=f"Close Prices and Signal Heatmap",
             xaxis2_title="Index",
             yaxis_title="Close",
-            yaxis2_title="Signals"
+            yaxis2_title="Signals",
+            yaxis=dict(autorange=True),
+            xaxis_rangeslider_visible=True,
+            hovermode="x unified",
+            dragmode="zoom",
+            template={
+                "layout": {
+                    "xaxis": {
+                        "range": [self.data.index.min(), self.data.index.max()]
+                    },
+                    "yaxis": {
+                        "autorange": True
+                    }
+                }
+            }
         )
 
         fig.update_layout(
