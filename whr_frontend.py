@@ -1,5 +1,5 @@
 import streamlit as st
-from signals import MarketAnalyzer
+from whr_backend import MarketAnalyzer
 from data import DataManager
 
 st.title("美股技术指标分析")
