@@ -37,9 +37,9 @@ class MarketAnalyzer:
     def calculate_mfi(self, period=14, slope_window=3):
         df = self.data.copy()
         
-        df['Typical_Price'] = (df['<HIGH>'] + df['<LOW>'] + df['<CLOSE>']) / 3
+        df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
         
-        df['Raw_Money_Flow'] = df['Typical_Price'] * df['<VOL>']
+        df['Raw_Money_Flow'] = df['Typical_Price'] * df['volume']
         
         df['Price_Change'] = df['Typical_Price'].diff()
         df['Positive_Flow'] = np.where(df['Price_Change'] > 0, df['Raw_Money_Flow'], 0)
@@ -74,10 +74,10 @@ class MarketAnalyzer:
     def calculate_obv(self):
         df = self.data.copy()
         
-        df['Price_Change'] = df['<CLOSE>'].diff()
+        df['Price_Change'] = df['close'].diff()
         df['Direction'] = np.where(df['Price_Change'] > 0, 1, np.where(df['Price_Change'] < 0, -1, 0))
         
-        df['INDC_OBV'] = (df['<VOL>'] * df['Direction']).cumsum()
+        df['INDC_OBV'] = (df['volume'] * df['Direction']).cumsum()
         df = df.drop(['Price_Change', 'Direction'], axis=1).dropna().reset_index(drop=True)
         
         self.data = df
@@ -89,8 +89,8 @@ class MarketAnalyzer:
         Calculate the 20-hour moving average of the closing prices.
         """
         df = self.data.copy()
-        df['INDC_20HR_MA'] = df['<CLOSE>'].rolling(window=20).mean()
-        df['INDC_50HR_MA'] = df['<CLOSE>'].rolling(window=50).mean()
+        df['INDC_20HR_MA'] = df['close'].rolling(window=20).mean()
+        df['INDC_50HR_MA'] = df['close'].rolling(window=50).mean()
         self.data = df
         return '20-hour MA calculated.'
     
@@ -101,7 +101,7 @@ class MarketAnalyzer:
     def generate_flags(self):
         df = self.data.copy()
         df['均线支持'] = np.where(
-            (df['<CLOSE>'] >= df['INDC_20HR_MA'] * 0.97) & (df['<CLOSE>'] <= df['INDC_20HR_MA'] * 1.03) &
+            (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
             (df['INDC_20HR_MA'] > df['INDC_50HR_MA']),
             True, False
         )
@@ -113,7 +113,7 @@ class MarketAnalyzer:
         )
 
         df['OBV量价背离'] = np.where(
-            (df['<CLOSE>'] < df['<CLOSE>'].shift(1)) & 
+            (df['close'] < df['close'].shift(1)) & 
             (df['INDC_OBV'] >= df['INDC_OBV'].shift(1)),
             True, False
         )
@@ -133,7 +133,7 @@ class MarketAnalyzer:
         fig.add_trace(
             go.Scatter(
                 x=self.data.index,
-                y=self.data['<CLOSE>'],
+                y=self.data['close'],
                 mode='lines',
                 name='Close',
                 line=dict(color='white')
