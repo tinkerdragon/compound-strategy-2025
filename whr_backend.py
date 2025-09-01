@@ -131,8 +131,8 @@ class MarketAnalyzer:
         fig = make_subplots(
             rows=4, cols=1,
             shared_xaxes=True,
-            row_heights=[0.5, 0.2, 0.2, 0.1],  # Adjusted for better proportion
-            vertical_spacing=1,  # Increased spacing
+            row_heights=[0.3, 0.2, 0.2, 0.3],  # Adjusted for better proportion
+            vertical_spacing=0.03,  # Increased spacing
             subplot_titles=("Closing Price", "MFI", "Volume", "Signal Heatmap")
         )
         
@@ -230,7 +230,7 @@ class MarketAnalyzer:
             dragmode="zoom",
             plot_bgcolor="white",
             margin=dict(l=50, r=50, t=100, b=50),
-            showlegend=True
+            showlegend=True,
         )
         
         return fig

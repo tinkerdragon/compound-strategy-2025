@@ -5,10 +5,7 @@ from datetime import datetime
 
 st.title("美股技术指标分析")
 
-# Persist analyzer in session state
-if 'analyzer' not in st.session_state:
-    st.session_state.analyzer = MarketAnalyzer()
-analyzer = st.session_state.analyzer
+analyzer = MarketAnalyzer()
 
 # Create columns for parameter inputs
 col1, col2 = st.columns(2)
