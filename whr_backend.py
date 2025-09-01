@@ -1,22 +1,8 @@
 import pandas as pd
-import os
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data import DataManager
-
-'''
-四大触发条件:
-2.MFI超卖反弹:
-MFI(14) 跌破30后快速回升 → 资金回流信号
-要求:MFI回升斜率 > 45°(快速脱离超卖区)
-3.OBV量价背离终结:
-价格创新低, 但OBV未创新低(下跌动能衰竭)
-OBV出现单根2%以上阳量柱(主力吸筹信号)
-4.K线+成交量准确入场:
-反转K线组合:早晨之星/锤子线/阳包阴(最强买卖点)
-成交量放大:当前成交量 > 前3小时均量 200%
-'''
 
 class MarketAnalyzer:
     def __init__(self):
@@ -34,7 +20,6 @@ class MarketAnalyzer:
         df = self.data.copy()
         
         df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
-        
         df['Raw_Money_Flow'] = df['Typical_Price'] * df['volume']
         
         df['Price_Change'] = df['Typical_Price'].diff()
@@ -45,10 +30,8 @@ class MarketAnalyzer:
         negative_sum = df['Negative_Flow'].rolling(window=period).sum()
         
         df['Money_Flow_Ratio'] = positive_sum / (negative_sum + 1e-10)
-        
         df['INDC_MFI'] = 100 - (100 / (1 + df['Money_Flow_Ratio']))
 
-        # Calculate the slope of MFI using linear regression over a rolling window
         def calc_slope(series):
             y = series.values
             x = np.arange(len(y))
@@ -61,10 +44,9 @@ class MarketAnalyzer:
         df['INDC_MFI_SLOPE'] = df['INDC_MFI'].rolling(window=slope_window).apply(calc_slope, raw=False)
 
         df = df.drop(['Typical_Price', 'Raw_Money_Flow', 'Price_Change', 
-                    'Positive_Flow', 'Negative_Flow', 'Money_Flow_Ratio'], axis=1).dropna().reset_index(drop=True)
+                    'Positive_Flow', 'Negative_Flow', 'Money_Flow_Ratio'], axis=1).dropna()
         
         self.data = df
-
         return 'MFI calculation completed.'
     
     def calculate_obv(self):
@@ -74,24 +56,47 @@ class MarketAnalyzer:
         df['Direction'] = np.where(df['Price_Change'] > 0, 1, np.where(df['Price_Change'] < 0, -1, 0))
         
         df['INDC_OBV'] = (df['volume'] * df['Direction']).cumsum()
-        df = df.drop(['Price_Change', 'Direction'], axis=1).dropna().reset_index(drop=True)
+        df = df.drop(['Price_Change', 'Direction'], axis=1).dropna()
         
         self.data = df
-        
         return 'OBV calculation completed.'
     
     def calculate_ma(self):
-        """
-        Calculate the moving averages of the closing prices.
-        """
         df = self.data.copy()
         df['INDC_20HR_MA'] = df['close'].rolling(window=20).mean()
         df['INDC_50HR_MA'] = df['close'].rolling(window=50).mean()
         self.data = df
         return '20-hour MA calculated.'
     
+    def calculate_candle_patterns(self, volume_multiplier=2.0):
+        df = self.data.copy()
+        
+        df['body'] = abs(df['close'] - df['open'])
+        df['lower_wick'] = df[['open', 'close']].min(axis=1) - df['low']
+        df['upper_wick'] = df['high'] - df[['open', 'close']].max(axis=1)
+        df['Hammer'] = (df['lower_wick'] >= 2 * df['body']) & (df['upper_wick'] <= 0.5 * df['body'])
+        
+        df['Bullish_Engulfing'] = (df['close'].shift(1) < df['open'].shift(1)) & \
+                                  (df['close'] > df['open']) & \
+                                  (df['open'] < df['close'].shift(1)) & \
+                                  (df['close'] > df['open'].shift(1))
+        
+        df['Morning_Star'] = (df['close'].shift(2) < df['open'].shift(2)) & \
+                             (abs(df['close'].shift(1) - df['open'].shift(1)) < 0.3 * (df['high'].shift(1) - df['low'].shift(1))) & \
+                             (df['open'].shift(1) < df['close'].shift(2)) & \
+                             (df['close'] > df['open']) & \
+                             (df['close'] > (df['open'].shift(2) + df['close'].shift(2)) / 2)
+        
+        df['prev_avg_vol'] = df['volume'].shift(1).rolling(3).mean()
+        df['Volume_Surge'] = df['volume'] > volume_multiplier * df['prev_avg_vol']
+        
+        df = df.drop(['body', 'lower_wick', 'upper_wick', 'prev_avg_vol'], axis=1)
+        
+        self.data = df.dropna()
+        return 'Candle patterns calculated.'
+    
     def drop(self):
-        self.data = self.data.dropna().reset_index(drop=True)
+        self.data = self.data.dropna()
         return 'Indicators calculated and data updated.'
     
     def generate_flags(self, dip_window=5, slope_threshold=1.0):
@@ -114,87 +119,118 @@ class MarketAnalyzer:
             True, False
         )
 
-        self.data = df.dropna().reset_index(drop=True)
+        self.data = df.dropna()
 
-    def plot(self):
-        bool_cols = ['均线支持', 'MFI超卖反弹', 'OBV量价背离']
-        data = self.data[bool_cols].astype(int).T
+    def create_figure(self, df):
+        bool_cols = ['均线支持', 'MFI超卖反弹', 'OBV量价背离', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge']
+        if not all(col in df.columns for col in bool_cols):
+            raise ValueError(f"Missing columns: {set(bool_cols) - set(df.columns)}")
+        data = df[bool_cols].astype(int).T
+        
+        # Create subplots with adjusted heights and spacing
         fig = make_subplots(
-            rows=2, cols=1,
+            rows=4, cols=1,
             shared_xaxes=True,
-            row_heights=[0.6, 0.4],
-            vertical_spacing=0.1,
-            subplot_titles=("Close", "Signal Heatmap")
+            row_heights=[0.5, 0.2, 0.2, 0.1],  # Adjusted for better proportion
+            vertical_spacing=1,  # Increased spacing
+            subplot_titles=("Closing Price", "MFI", "Volume", "Signal Heatmap")
         )
-        # Plot close price
+        
+        # Plot closing price as a line
         fig.add_trace(
             go.Scatter(
-                x=self.data.index,
-                y=self.data['close'],
+                x=df.index,
+                y=df['close'],
                 mode='lines',
-                name='Close',
-                line=dict(color='white')
+                name='Close Price',
+                line=dict(color='blue')
             ),
             row=1, col=1
         )
+        
         # Plot 20HR MA
         fig.add_trace(
             go.Scatter(
-                x=self.data.index,
-                y=self.data['INDC_20HR_MA'],
+                x=df.index,
+                y=df['INDC_20HR_MA'],
                 mode='lines',
                 name='20HR MA',
                 line=dict(color='orange')
             ),
             row=1, col=1
         )
+        
         # Plot 50HR MA
         fig.add_trace(
             go.Scatter(
-                x=self.data.index,
-                y=self.data['INDC_50HR_MA'],
+                x=df.index,
+                y=df['INDC_50HR_MA'],
                 mode='lines',
                 name='50HR MA',
-                line=dict(color='blue')
+                line=dict(color='green')
             ),
             row=1, col=1
         )
+        
+        # Plot MFI
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df['INDC_MFI'],
+                mode='lines',
+                name='MFI',
+                line=dict(color='purple')
+            ),
+            row=2, col=1
+        )
+        
+        # Add overbought/oversold lines
+        fig.add_hline(y=80, line_dash="dot", line_color="red", row=2, col=1)
+        fig.add_hline(y=20, line_dash="dot", line_color="green", row=2, col=1)
+        
+        # Plot Volume
+        fig.add_trace(
+            go.Bar(
+                x=df.index,
+                y=df['volume'],
+                name='Volume',
+                marker_color='blue'
+            ),
+            row=3, col=1
+        )
+        
         # Plot heatmap
         fig.add_trace(
             go.Heatmap(
                 z=data.values,
-                x=self.data.index,
+                x=df.index,
                 y=data.index,
                 colorscale='YlGnBu',
                 showscale=True,
                 colorbar=dict(title='Signal'),
             ),
-            row=2, col=1
+            row=4, col=1
         )
+        
+        # Update layout for better appearance
         fig.update_layout(
-            height=600,
-            title_text=f"Close Prices and Signal Heatmap",
-            xaxis2_title="Index",
-            yaxis_title="Close",
-            yaxis2_title="Signals",
+            height=1000,  # Increased height for better visibility
+            title_text="Closing Price, MFI, Volume, and Signal Heatmap",
+            xaxis4_title="Date",
+            yaxis_title="Price",
+            yaxis2_title="MFI",
+            yaxis3_title="Volume",
+            yaxis4_title="Signals",
             yaxis=dict(autorange=True),
-            xaxis_rangeslider_visible=True,
+            yaxis2=dict(autorange=True),
+            yaxis3=dict(autorange=True),
+            yaxis4=dict(autorange=True),
+            xaxis_rangeslider_visible=False,
             hovermode="x unified",
             dragmode="zoom",
-            template={
-                "layout": {
-                    "xaxis": {
-                        "range": [self.data.index.min(), self.data.index.max()]
-                    },
-                    "yaxis": {
-                        "autorange": True
-                    }
-                }
-            }
+            plot_bgcolor="white",
+            margin=dict(l=50, r=50, t=100, b=50),
+            showlegend=True
         )
-
-        fig.update_layout(
-            plot_bgcolor="rgba(14, 17, 23, 1)",
-        )
-
+        
         return fig

@@ -5,7 +5,10 @@ from datetime import datetime
 
 st.title("美股技术指标分析")
 
-analyzer = MarketAnalyzer()
+# Persist analyzer in session state
+if 'analyzer' not in st.session_state:
+    st.session_state.analyzer = MarketAnalyzer()
+analyzer = st.session_state.analyzer
 
 # Create columns for parameter inputs
 col1, col2 = st.columns(2)
@@ -28,14 +31,20 @@ with col2:
 
 if st.button("🚀"):
     try:
+        # Fetch and process data
         analyzer.fetch_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
         analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
         analyzer.calculate_ma()
         analyzer.calculate_obv()
-        analyzer.drop()
+        analyzer.calculate_candle_patterns()
         analyzer.generate_flags(dip_window=dip_window, slope_threshold=slope_threshold)
+        
+        # Display data
         st.dataframe(analyzer.show_data())
-        st.plotly_chart(analyzer.plot())
+        
+        # Display plot
+        fig = analyzer.create_figure(analyzer.data)
+        st.plotly_chart(fig, use_container_width=True)
+        
     except Exception as e:
-        st.error(e)
-        st.error(f'No data found for {ticker}. Please check stock list.')
+        st.error(f"Error: {e}")
