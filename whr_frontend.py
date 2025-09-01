@@ -19,12 +19,15 @@ with col1:
         st.write(f"结束日期: {end_date.strftime('%Y-%m-%d')} (今日)")
     else:
         end_date = st.date_input("结束日期:", value=None, min_value=None, max_value=None)
+    volume_multiplier = st.slider("成交量激增倍数:", 1.0, 5.0, 2.0, 0.1)
 
 with col2:
-    mfi_period = st.slider("MFI 周期:", 1, 50, 14)
-    mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 3)
-    dip_window = st.slider("MFI 反弹检测窗口长度:", 1, 50, 5)
-    slope_threshold = st.slider("MFI 反弹梯度:", 0.0, 5.0, 1.0, 0.1)
+    mfi_period = st.slider("MFI 周期:", 1, 50, 14, help="计算MFI的周期长度")
+    mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 3, help="用于计算MFI回弹梯度的窗口长度")
+    signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 5, help="用于检测MFI摸底回弹的窗口长度")
+    slope_threshold = st.slider("MFI 反弹梯度:", 0.0, 5.0, 1.0, 0.1, help="判断MFI反弹的梯度阈值")
+    recover_window = st.slider("MA破位恢复窗口:", 1, 10, 3)
+    
 
 if st.button("🚀"):
     try:
@@ -33,11 +36,11 @@ if st.button("🚀"):
         analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
         analyzer.calculate_ma()
         analyzer.calculate_obv()
-        analyzer.calculate_candle_patterns()
-        analyzer.generate_flags(dip_window=dip_window, slope_threshold=slope_threshold)
+        analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
+        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, recover_window=recover_window)
         
         # Display data
-        st.dataframe(analyzer.show_data())
+        st.markdown("### data successfully loaded")
         
         # Display plot
         fig = analyzer.create_figure(analyzer.data)
