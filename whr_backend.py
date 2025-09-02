@@ -51,6 +51,14 @@ class MarketAnalyzer:
     def fetch_data(self, ticker, start_date, end_date):
         manager = DataManager()
         self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
+        self.data['datetime'] = pd.to_datetime(self.data['datetime'])
+        self.data.set_index('datetime', inplace=True)
+        # Remove non-trading days (days with no trading activity, i.e., total volume == 0)
+        self.data['date'] = self.data.index.date
+        daily_volume = self.data.groupby('date')['volume'].sum()
+        trading_days = daily_volume[daily_volume > 0].index
+        self.data = self.data[self.data['date'].isin(trading_days)]
+        self.data = self.data.drop(columns=['date'])
     
     def show_data(self):
         """Display the first few rows of the stored data sequence."""
@@ -152,7 +160,7 @@ class MarketAnalyzer:
         self.data = self.data.dropna()
         return 'Indicators calculated and data updated.'
     
-    def generate_flags(self, signal_window=5, slope_threshold=1.0, recover_window=3):
+    def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3):
         df = self.data.copy()
         df['均线支持'] = np.where(
             (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
@@ -162,36 +170,15 @@ class MarketAnalyzer:
 
         df['MFI超卖反弹'] = np.where(
             (df['INDC_MFI'].rolling(window=signal_window).min() < 30) & 
-            (df['INDC_MFI_SLOPE'] > slope_threshold),
-            True, False
-        )
-
-        df['OBV量价背离'] = np.where(
-            (df['close'] < df['close'].shift(1)) & 
-            (df['INDC_OBV'] >= df['INDC_OBV'].shift(1)),
+            (df['INDC_MFI_SLOPE'] >= slope_threshold),
             True, False
         )
 
         # Sell flags
-        df['均线破位'] = False
+        is_below = df['close'] < df['INDC_20HR_MA'] * 0.97
+        df['价格破位'] = is_below.rolling(window=lookback_window).sum() >= lookback_window
 
-        # MA cross down
-        ma_cross_down = (df['INDC_20HR_MA'] < df['INDC_50HR_MA'])
-        df['均线破位'] = ma_cross_down
-
-        # Break below with volume surge down and no quick recover
-        potential_breaks = (df['close'] < df['INDC_20HR_MA'] * 0.97) & \
-                           (df['close'].shift(1) >= df['INDC_20HR_MA'].shift(1) * 0.97) & \
-                           df['Volume_Surge'] & \
-                           (df['close'] < df['close'].shift(1))
-
-        for idx in df[potential_breaks].index:
-            loc = df.index.get_loc(idx)
-            if loc + recover_window >= len(df):
-                continue
-            recovered = any(df['close'].iloc[loc + k] >= df['INDC_20HR_MA'].iloc[loc + k] * 0.97 for k in range(1, recover_window + 1))
-            if not recovered:
-                df.at[idx, '均线破位'] = True
+        df['均线死叉'] = df['价格破位'] & (df['INDC_20HR_MA'] < df['INDC_50HR_MA'])
 
         df['MFI超买回落'] = np.where(
             (df['INDC_MFI'].rolling(window=signal_window).max() > 70) & 
@@ -214,9 +201,9 @@ class MarketAnalyzer:
 
         self.data = df.dropna()
 
-    def create_figure(self, df):
-        buy_cols = ['均线支持', 'MFI超卖反弹', 'OBV量价背离', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge']
-        sell_cols = ['均线破位', 'MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
+    def create_figures(self, df):
+        buy_cols = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge']
+        sell_cols = ['价格破位', '均线死叉', 'MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
         if not all(col in df.columns for col in buy_cols + sell_cols):
             missing = set(buy_cols + sell_cols) - set(df.columns)
             raise ValueError(f"Missing columns: {missing}")
@@ -224,53 +211,63 @@ class MarketAnalyzer:
         buy_data = df[buy_cols].astype(int).T
         sell_data = df[sell_cols].astype(int).T
         
-        # Create subplots with adjusted heights and spacing
-        fig = make_subplots(
-            rows=5, cols=1,
-            shared_xaxes=True,
-            row_heights=[0.3, 0.2, 0.2, 0.15, 0.15],
-            vertical_spacing=0.03,
-            subplot_titles=("Closing Price", "MFI", "Volume", "Buy Signal Heatmap", "Sell Signal Heatmap")
-        )
+        # Create candlestick figure
+        fig_candle = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            name='Candlestick'
+        )])
         
-        # Plot closing price as a line
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df['close'],
-                mode='lines',
-                name='Close Price',
-                line=dict(color='blue')
-            ),
-            row=1, col=1
-        )
-        
-        # Plot 20HR MA
-        fig.add_trace(
+        # Add 20HR MA
+        fig_candle.add_trace(
             go.Scatter(
                 x=df.index,
                 y=df['INDC_20HR_MA'],
                 mode='lines',
                 name='20HR MA',
                 line=dict(color='orange')
-            ),
-            row=1, col=1
+            )
         )
         
-        # Plot 50HR MA
-        fig.add_trace(
+        # Add 50HR MA
+        fig_candle.add_trace(
             go.Scatter(
                 x=df.index,
                 y=df['INDC_50HR_MA'],
                 mode='lines',
                 name='50HR MA',
                 line=dict(color='green')
-            ),
-            row=1, col=1
+            )
+        )
+        
+        fig_candle.update_layout(
+            height=600,
+            width=2000,
+            title_text="Candlestick Chart with MAs",
+            xaxis_title="Date",
+            yaxis_title="Price",
+            xaxis_rangeslider_visible=True,
+            hovermode="x unified",
+            dragmode="zoom",
+            plot_bgcolor="white",
+            margin=dict(l=50, r=50, t=100, b=50),
+            showlegend=True,
+        )
+        
+        # Create multiplot subplots with adjusted heights and spacing
+        fig_multi = make_subplots(
+            rows=4, cols=1,
+            shared_xaxes=True,
+            row_heights=[0.25, 0.25, 0.25, 0.25],
+            vertical_spacing=0.03,
+            subplot_titles=("MFI", "Volume", "Buy Signal Heatmap", "Sell Signal Heatmap")
         )
         
         # Plot MFI
-        fig.add_trace(
+        fig_multi.add_trace(
             go.Scatter(
                 x=df.index,
                 y=df['INDC_MFI'],
@@ -278,26 +275,26 @@ class MarketAnalyzer:
                 name='MFI',
                 line=dict(color='purple')
             ),
-            row=2, col=1
+            row=1, col=1
         )
         
         # Add overbought/oversold lines
-        fig.add_hline(y=80, line_dash="dot", line_color="red", row=2, col=1)
-        fig.add_hline(y=20, line_dash="dot", line_color="green", row=2, col=1)
+        fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=1, col=1)
+        fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=1, col=1)
         
         # Plot Volume
-        fig.add_trace(
+        fig_multi.add_trace(
             go.Bar(
                 x=df.index,
                 y=df['volume'],
                 name='Volume',
                 marker_color='blue'
             ),
-            row=3, col=1
+            row=2, col=1
         )
         
         # Plot buy heatmap
-        fig.add_trace(
+        fig_multi.add_trace(
             go.Heatmap(
                 z=buy_data.values,
                 x=df.index,
@@ -306,11 +303,11 @@ class MarketAnalyzer:
                 showscale=True,
                 colorbar=dict(title='Buy Signal'),
             ),
-            row=4, col=1
+            row=3, col=1
         )
         
         # Plot sell heatmap
-        fig.add_trace(
+        fig_multi.add_trace(
             go.Heatmap(
                 z=sell_data.values,
                 x=df.index,
@@ -319,24 +316,23 @@ class MarketAnalyzer:
                 showscale=True,
                 colorbar=dict(title='Sell Signal'),
             ),
-            row=5, col=1
+            row=4, col=1
         )
         
         # Update layout for better appearance
-        fig.update_layout(
-            height=2000,
-            title_text="Closing Price, MFI, Volume, Buy and Sell Signal Heatmaps",
-            xaxis5_title="Date",
-            yaxis_title="Price",
-            yaxis2_title="MFI",
-            yaxis3_title="Volume",
-            yaxis4_title="Buy Signals",
-            yaxis5_title="Sell Signals",
+        fig_multi.update_layout(
+            height=1400,
+            width=2000,
+            title_text="MFI, Volume, Buy and Sell Signal Heatmaps",
+            xaxis4_title="Date",
+            yaxis_title="MFI",
+            yaxis2_title="Volume",
+            yaxis3_title="Buy Signals",
+            yaxis4_title="Sell Signals",
             yaxis=dict(autorange=True),
             yaxis2=dict(autorange=True),
             yaxis3=dict(autorange=True),
             yaxis4=dict(autorange=True),
-            yaxis5=dict(autorange=True),
             xaxis_rangeslider_visible=False,
             hovermode="x unified",
             dragmode="zoom",
@@ -345,4 +341,4 @@ class MarketAnalyzer:
             showlegend=True,
         )
         
-        return fig
+        return fig_candle, fig_multi

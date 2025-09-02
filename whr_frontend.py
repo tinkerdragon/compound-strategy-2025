@@ -7,6 +7,16 @@ st.title("美股技术指标分析")
 
 analyzer = MarketAnalyzer()
 
+st.markdown("""
+    <style>
+    .block-container {
+        padding-left: 15rem !important;
+        padding-right: 15rem !important;
+        max-width: 100% !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Create columns for parameter inputs
 col1, col2 = st.columns(2)
 
@@ -26,7 +36,7 @@ with col2:
     mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 3, help="用于计算MFI回弹梯度的窗口长度")
     signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 5, help="用于检测MFI摸底回弹的窗口长度")
     slope_threshold = st.slider("MFI 反弹梯度:", 0.0, 5.0, 1.0, 0.1, help="判断MFI反弹的梯度阈值")
-    recover_window = st.slider("MA破位恢复窗口:", 1, 10, 3)
+    lookback_window = st.slider("MA破位看回窗口:", 1, 10, 3)
     
 
 if st.button("🚀"):
@@ -37,14 +47,15 @@ if st.button("🚀"):
         analyzer.calculate_ma()
         analyzer.calculate_obv()
         analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, recover_window=recover_window)
+        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window)
         
         # Display data
-        st.markdown("### data successfully loaded")
+        st.success('Data successfully loaded.')
         
         # Display plot
-        fig = analyzer.create_figure(analyzer.data)
-        st.plotly_chart(fig, use_container_width=True)
+        fig_candle, fig_multi = analyzer.create_figures(analyzer.data)
+        st.plotly_chart(fig_candle, use_container_width=False)
+        st.plotly_chart(fig_multi, use_container_width=False)
         
     except Exception as e:
         st.error(f"Error: {e}")
