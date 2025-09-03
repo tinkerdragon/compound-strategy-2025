@@ -17,6 +17,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Add info about auto-scaling feature
+st.info("📊 提示: K线图支持自动Y轴缩放 - 使用鼠标框选或拖动底部滑块时，Y轴会自动调整以适配可见数据范围")
+
 # Create columns for parameter inputs
 col1, col2 = st.columns(2)
 
@@ -37,25 +40,40 @@ with col2:
     signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 5, help="用于检测MFI摸底回弹的窗口长度")
     slope_threshold = st.slider("MFI 反弹梯度:", 0.0, 5.0, 1.0, 0.1, help="判断MFI反弹的梯度阈值")
     lookback_window = st.slider("MA破位看回窗口:", 1, 10, 3)
-    
 
-if st.button("🚀"):
+if st.button("🚀 开始分析"):
     try:
-        # Fetch and process data
-        analyzer.fetch_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-        analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
-        analyzer.calculate_ma()
-        analyzer.calculate_obv()
-        analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window)
+        with st.spinner('正在获取数据并计算指标...'):
+            # Fetch and process data
+            analyzer.fetch_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+            analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
+            analyzer.calculate_ma()
+            analyzer.calculate_obv()
+            analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
+            analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window)
         
         # Display data
-        st.success('Data successfully loaded.')
+        st.success(f'✅ 成功加载 {ticker} 数据')
         
-        # Display plot
+        # Display interactive instructions
+        with st.expander("📖 图表交互说明"):
+            st.markdown("""
+            - **缩放**: 鼠标框选区域或使用滑块调整显示范围
+            - **自动缩放**: Y轴会自动调整以适配当前显示的数据范围
+            - **平移**: 按住鼠标左键拖动图表
+            - **重置**: 双击图表恢复初始视图
+            - **悬停**: 鼠标悬停查看详细数值
+            """)
+        
+        # Display plots
         fig_candle, fig_multi = analyzer.create_figures(analyzer.data)
-        st.plotly_chart(fig_candle, use_container_width=False)
-        st.plotly_chart(fig_multi, use_container_width=False)
+        
+        # Candlestick chart with auto-scaling
+        st.plotly_chart(fig_candle, use_container_width=False, config={'displayModeBar': True})
+        
+        # Multi-panel chart
+        st.plotly_chart(fig_multi, use_container_width=False, config={'displayModeBar': True})
         
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"❌ 错误: {e}")
+        st.info("请检查输入的股票代码和日期范围是否正确")

@@ -8,18 +8,18 @@ from data import DataManager
 买入条件
 四大触发条件：
 1.均线支撑：
-价格回调至20小时均线附近（±3%）确认
-20小时均线仍高于50小时均线（短线趋势未破）
+价格回调至20小时均线附近（±3%）确认
+20小时均线仍高于50小时均线（短线趋势未破）
 *（参数：小时级K线，对应30/60分钟周期）*
 2.MFI超卖反弹：
-MFI(14) 跌破30后快速回升 → 资金回流信号
-要求：MFI回升斜率 > 45°（快速脱离超卖区）
+MFI(14) 跌破30后快速回升 → 资金回流信号
+要求：MFI回升斜率 > 45°（快速脱离超卖区）
 3.OBV量价背离终结：
-价格创新低，但OBV未创新低（下跌动能衰竭）
-OBV出现单根2%以上阳量柱（主力吸筹信号）
+价格创新低，但OBV未创新低（下跌动能衰竭）
+OBV出现单根2%以上阳量柱（主力吸筹信号）
 4.K线+成交量准确入场：
-反转K线组合：早晨之星/锤子线/阳包阴（最强买卖点）
-成交量放大：当前成交量 > 前3小时均量 200%
+反转K线组合：早晨之星/锤子线/阳包阴（最强买卖点）
+成交量放大：当前成交量 > 前3小时均量 200%
 注意：K线形态是最强的买卖点 前三点均为判断方向用的
 
 
@@ -225,7 +225,7 @@ class MarketAnalyzer:
         buy_data = df[buy_cols].astype(int).T
         sell_data = df[sell_cols].astype(int).T
 
-        # Create candlestick figure (x = numeric index)
+        # Create candlestick figure with auto-ranging y-axis on zoom
         fig_candle = go.Figure(data=[go.Candlestick(
             x=x_idx,
             open=df['open'],
@@ -262,19 +262,35 @@ class MarketAnalyzer:
             )
         )
 
+        # Update layout with auto-ranging y-axis
         fig_candle.update_layout(
             height=600,
             width=2000,
-            title_text="Candlestick Chart with MAs",
+            title_text="Candlestick Chart with MAs (Auto-scaling Y-axis)",
             xaxis_title="Index",
             yaxis_title="Price",
-            xaxis_rangeslider_visible=True,
+            xaxis=dict(
+                rangeslider=dict(
+                    visible=True,
+                    # This is the key setting for auto-ranging y-axis
+                    yaxis=dict(rangemode='match')
+                ),
+                type='linear'
+            ),
+            yaxis=dict(
+                autorange=True,
+                fixedrange=False,
+                type='linear'
+            ),
             hovermode="x unified",
             dragmode="zoom",
             plot_bgcolor="white",
             margin=dict(l=50, r=50, t=100, b=50),
             showlegend=True,
         )
+        
+        # Enable auto-ranging on zoom for the main plot area as well
+        fig_candle.update_xaxes(rangeslider_yaxis_rangemode='match')
 
         # Create multiplot subplots
         fig_multi = make_subplots(
