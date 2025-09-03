@@ -202,52 +202,69 @@ class MarketAnalyzer:
         self.data = df.dropna()
 
     def create_figures(self, df):
+        # Columns needed for the heatmaps
         buy_cols = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge']
         sell_cols = ['价格破位', '均线死叉', 'MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
         if not all(col in df.columns for col in buy_cols + sell_cols):
             missing = set(buy_cols + sell_cols) - set(df.columns)
             raise ValueError(f"Missing columns: {missing}")
         
+        # Use numeric index for the x-axis in all plots
+        x_idx = np.arange(len(df))
+        # Keep readable time in hover (if index is datetime-like)
+        try:
+            time_str = pd.to_datetime(df.index).strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            # Fallback in case index is not datetime-like
+            time_str = df.index.astype(str)
+        # For candlestick hovertemplate we can use customdata as 2D array
+        customdata_ts = np.column_stack([time_str])
+
         buy_data = df[buy_cols].astype(int).T
         sell_data = df[sell_cols].astype(int).T
-        
-        # Create candlestick figure
+
+        # Create candlestick figure (x = numeric index)
         fig_candle = go.Figure(data=[go.Candlestick(
-            x=df.index,
+            x=x_idx,
             open=df['open'],
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name='Candlestick'
+            name='Candlestick',
+            customdata=customdata_ts,
         )])
-        
+
         # Add 20HR MA
         fig_candle.add_trace(
             go.Scatter(
-                x=df.index,
+                x=x_idx,
                 y=df['INDC_20HR_MA'],
                 mode='lines',
                 name='20HR MA',
-                line=dict(color='orange')
+                line=dict(color='orange'),
+                customdata=time_str,
+                hovertemplate="Index: %{x}<br>Time: %{customdata}<br>20HR MA: %{y:.4f}<extra></extra>"
             )
         )
-        
+
         # Add 50HR MA
         fig_candle.add_trace(
             go.Scatter(
-                x=df.index,
+                x=x_idx,
                 y=df['INDC_50HR_MA'],
                 mode='lines',
                 name='50HR MA',
-                line=dict(color='green')
+                line=dict(color='green'),
+                customdata=time_str,
+                hovertemplate="Index: %{x}<br>Time: %{customdata}<br>50HR MA: %{y:.4f}<extra></extra>"
             )
         )
-        
+
         fig_candle.update_layout(
             height=600,
             width=2000,
             title_text="Candlestick Chart with MAs",
-            xaxis_title="Date",
+            xaxis_title="Index",
             yaxis_title="Price",
             xaxis_rangeslider_visible=True,
             hovermode="x unified",
@@ -256,8 +273,8 @@ class MarketAnalyzer:
             margin=dict(l=50, r=50, t=100, b=50),
             showlegend=True,
         )
-        
-        # Create multiplot subplots with adjusted heights and spacing
+
+        # Create multiplot subplots
         fig_multi = make_subplots(
             rows=4, cols=1,
             shared_xaxes=True,
@@ -265,39 +282,43 @@ class MarketAnalyzer:
             vertical_spacing=0.03,
             subplot_titles=("MFI", "Volume", "Buy Signal Heatmap", "Sell Signal Heatmap")
         )
-        
+
         # Plot MFI
         fig_multi.add_trace(
             go.Scatter(
-                x=df.index,
+                x=x_idx,
                 y=df['INDC_MFI'],
                 mode='lines',
                 name='MFI',
-                line=dict(color='purple')
+                line=dict(color='purple'),
+                customdata=time_str,
+                hovertemplate="Index: %{x}<br>Time: %{customdata}<br>MFI: %{y:.2f}<extra></extra>"
             ),
             row=1, col=1
         )
-        
-        # Add overbought/oversold lines
+
+        # Overbought/oversold lines
         fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=1, col=1)
         fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=1, col=1)
-        
+
         # Plot Volume
         fig_multi.add_trace(
             go.Bar(
-                x=df.index,
+                x=x_idx,
                 y=df['volume'],
                 name='Volume',
-                marker_color='blue'
+                marker_color='blue',
+                customdata=time_str,
+                hovertemplate="Index: %{x}<br>Time: %{customdata}<br>Volume: %{y}<extra></extra>"
             ),
             row=2, col=1
         )
-        
+
         # Plot buy heatmap
         fig_multi.add_trace(
             go.Heatmap(
                 z=buy_data.values,
-                x=df.index,
+                x=x_idx,
                 y=buy_data.index,
                 colorscale='YlGnBu',
                 showscale=True,
@@ -305,12 +326,12 @@ class MarketAnalyzer:
             ),
             row=3, col=1
         )
-        
+
         # Plot sell heatmap
         fig_multi.add_trace(
             go.Heatmap(
                 z=sell_data.values,
-                x=df.index,
+                x=x_idx,
                 y=sell_data.index,
                 colorscale='YlOrRd',
                 showscale=True,
@@ -318,13 +339,13 @@ class MarketAnalyzer:
             ),
             row=4, col=1
         )
-        
+
         # Update layout for better appearance
         fig_multi.update_layout(
             height=1400,
             width=2000,
             title_text="MFI, Volume, Buy and Sell Signal Heatmaps",
-            xaxis4_title="Date",
+            xaxis4_title="Index",
             yaxis_title="MFI",
             yaxis2_title="Volume",
             yaxis3_title="Buy Signals",
@@ -340,5 +361,5 @@ class MarketAnalyzer:
             margin=dict(l=50, r=50, t=100, b=50),
             showlegend=True,
         )
-        
+
         return fig_candle, fig_multi
