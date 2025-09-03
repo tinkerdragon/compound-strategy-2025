@@ -40,6 +40,8 @@ with col2:
     signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 5, help="用于检测MFI摸底回弹的窗口长度")
     slope_threshold = st.slider("MFI 反弹梯度:", 0.0, 5.0, 1.0, 0.1, help="判断MFI反弹的梯度阈值")
     lookback_window = st.slider("MA破位看回窗口:", 1, 10, 3)
+    price_change_lookback = st.slider("价格变化看回窗口:", 1, 10, 3)
+    price_change_threshold = st.slider("价格变化阈值 (%):", 0.0, 20.0, 5.0, 0.5)
 
 if st.button("🚀 开始分析"):
     try:
@@ -50,7 +52,7 @@ if st.button("🚀 开始分析"):
             analyzer.calculate_ma()
             analyzer.calculate_obv()
             analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-            analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window)
+            analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window, price_change_lookback=price_change_lookback, price_change_threshold=price_change_threshold)
         
         # Display data
         st.success(f'✅ 成功加载 {ticker} 数据')

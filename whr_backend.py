@@ -162,7 +162,7 @@ class MarketAnalyzer:
         self.data = self.data.dropna()
         return 'Indicators calculated and data updated.'
     
-    def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3):
+    def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3, price_change_lookback=3, price_change_threshold=5.0):
         df = self.data.copy()
         df['均线支持'] = np.where(
             (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
@@ -175,12 +175,6 @@ class MarketAnalyzer:
             (df['INDC_MFI_SLOPE'] >= slope_threshold),
             True, False
         )
-
-        # Sell flags
-        is_below = df['close'] < df['INDC_20HR_MA'] * 0.97
-        df['价格破位'] = is_below.rolling(window=lookback_window).sum() >= lookback_window
-
-        df['均线死叉'] = df['价格破位'] & (df['INDC_20HR_MA'] < df['INDC_50HR_MA'])
 
         df['MFI超买回落'] = np.where(
             (df['INDC_MFI'].rolling(window=signal_window).max() > 70) & 
@@ -201,12 +195,17 @@ class MarketAnalyzer:
             True, False
         )
 
+        df['价格上涨'] = np.where(
+            ((df['close'] / df['close'].shift(price_change_lookback) - 1) * 100 > price_change_threshold),
+            True, False
+        )
+
         self.data = df.dropna()
 
     def create_figures(self, df):
         # Columns needed for the heatmaps
-        buy_cols = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge']
-        sell_cols = ['价格破位', '均线死叉', 'MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
+        buy_cols = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge', '价格上涨']
+        sell_cols = ['MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
         if not all(col in df.columns for col in buy_cols + sell_cols):
             missing = set(buy_cols + sell_cols) - set(df.columns)
             raise ValueError(f"Missing columns: {missing}")
