@@ -282,7 +282,33 @@ class MarketAnalyzer:
             shared_xaxes=True,
             row_heights=[0.25, 0.25, 0.25, 0.25],
             vertical_spacing=0.03,
-            subplot_titles=("MFI", "Volume", "Buy Signal Heatmap", "Sell Signal Heatmap")
+            subplot_titles=("Buy Signal Heatmap", "Sell Signal Heatmap", "MFI", "Volume")
+        )
+
+        # Plot buy heatmap
+        fig_multi.add_trace(
+            go.Heatmap(
+                z=buy_data.values,
+                x=x_idx,
+                y=buy_data.index,
+                colorscale='YlGnBu',
+                showscale=True,
+                colorbar=dict(title='Buy Signal'),
+            ),
+            row=1, col=1
+        )
+
+        # Plot sell heatmap
+        fig_multi.add_trace(
+            go.Heatmap(
+                z=sell_data.values,
+                x=x_idx,
+                y=sell_data.index,
+                colorscale='YlOrRd',
+                showscale=True,
+                colorbar=dict(title='Sell Signal'),
+            ),
+            row=2, col=1
         )
 
         # Plot MFI
@@ -296,12 +322,12 @@ class MarketAnalyzer:
                 customdata=time_str,
                 hovertemplate="Index: %{x}<br>Time: %{customdata}<br>MFI: %{y:.2f}<extra></extra>"
             ),
-            row=1, col=1
+            row=3, col=1
         )
 
         # Overbought/oversold lines
-        fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=1, col=1)
-        fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=1, col=1)
+        fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
+        fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
 
         # Plot Volume
         fig_multi.add_trace(
@@ -313,32 +339,6 @@ class MarketAnalyzer:
                 customdata=time_str,
                 hovertemplate="Index: %{x}<br>Time: %{customdata}<br>Volume: %{y}<extra></extra>"
             ),
-            row=2, col=1
-        )
-
-        # Plot buy heatmap
-        fig_multi.add_trace(
-            go.Heatmap(
-                z=buy_data.values,
-                x=x_idx,
-                y=buy_data.index,
-                colorscale='YlGnBu',
-                showscale=True,
-                colorbar=dict(title='Buy Signal'),
-            ),
-            row=3, col=1
-        )
-
-        # Plot sell heatmap
-        fig_multi.add_trace(
-            go.Heatmap(
-                z=sell_data.values,
-                x=x_idx,
-                y=sell_data.index,
-                colorscale='YlOrRd',
-                showscale=True,
-                colorbar=dict(title='Sell Signal'),
-            ),
             row=4, col=1
         )
 
@@ -346,12 +346,12 @@ class MarketAnalyzer:
         fig_multi.update_layout(
             height=1400,
             width=2000,
-            title_text="MFI, Volume, Buy and Sell Signal Heatmaps",
+            title_text="Buy and Sell Signal Heatmaps, MFI, Volume",
             xaxis4_title="Index",
-            yaxis_title="MFI",
-            yaxis2_title="Volume",
-            yaxis3_title="Buy Signals",
-            yaxis4_title="Sell Signals",
+            yaxis_title="Buy Signals",
+            yaxis2_title="Sell Signals",
+            yaxis3_title="MFI",
+            yaxis4_title="Volume",
             yaxis=dict(autorange=True),
             yaxis2=dict(autorange=True),
             yaxis3=dict(autorange=True),
