@@ -12,14 +12,14 @@ from data import DataManager
 20小时均线仍高于50小时均线（短线趋势未破）
 *（参数：小时级K线，对应30/60分钟周期）*
 2.MFI超卖反弹：
-MFI(14) 跌破30后快速回升 → 资金回流信号
+MFI(14) 跌破30后快速回升 → 资金回流信号
 要求：MFI回升斜率 > 45°（快速脱离超卖区）
 3.OBV量价背离终结：
 价格创新低，但OBV未创新低（下跌动能衰竭）
 OBV出现单根2%以上阳量柱（主力吸筹信号）
 4.K线+成交量准确入场：
 反转K线组合：早晨之星/锤子线/阳包阴（最强买卖点）
-成交量放大：当前成交量 > 前3小时均量 200%
+成交量放大：当前成交量 > 前3小时均量 200%
 注意：K线形态是最强的买卖点 前三点均为判断方向用的
 
 
@@ -53,6 +53,8 @@ class MarketAnalyzer:
         self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
         self.data['datetime'] = pd.to_datetime(self.data['datetime'])
         self.data.set_index('datetime', inplace=True)
+        # Filter for hours between 13:00 and 19:00
+        self.data = self.data[self.data.index.hour.isin(range(13, 20))]
         # Remove non-trading days (days with no trading activity, i.e., total volume == 0)
         self.data['date'] = self.data.index.date
         daily_volume = self.data.groupby('date')['volume'].sum()
