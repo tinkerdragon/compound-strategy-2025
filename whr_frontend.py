@@ -1,11 +1,17 @@
+# whr_frontend.py
 import streamlit as st
 from whr_backend import MarketAnalyzer
 from data import DataManager
 from datetime import datetime
 
-st.title("美股技术指标分析")
+if 'analyzers' not in st.session_state:
+    st.session_state.analyzers = None
+if 'signaling_tickers' not in st.session_state:
+    st.session_state.signaling_tickers = []
+if 'attempted_count' not in st.session_state:
+    st.session_state.attempted_count = 0
 
-analyzer = MarketAnalyzer()
+st.title("美股技术指标分析")
 
 st.markdown("""
     <style>
@@ -24,7 +30,8 @@ st.info("📊 提示: K线图支持自动Y轴缩放 - 使用鼠标框选或拖�
 col1, col2 = st.columns(2)
 
 with col1:
-    ticker = st.text_input("输入美股代码 (e.g. AAPL):", "AAPL")
+    ticker_input = st.text_input("输入美股代码列表 (e.g. AAPL,GOOG,MSFT):", "AAPL")
+    tickers = [t.strip().upper() for t in ticker_input.split(',') if t.strip()]
     start_date = st.date_input("开始日期:", value=None, min_value=None, max_value=None)
     use_today = st.checkbox("使用今天日期", value=False)
     if use_today:
@@ -46,28 +53,69 @@ with col2:
 if st.button("🚀 开始分析"):
     try:
         with st.spinner('正在获取数据并计算指标...'):
-            # Fetch and process data
-            analyzer.fetch_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-            analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
-            analyzer.calculate_ma()
-            analyzer.calculate_obv()
-            analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-            analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window, price_change_lookback=price_change_lookback, price_change_threshold=price_change_threshold)
+            analyzers = {}
+            signaling_tickers = []
+            progress_bar = st.progress(0)
+            for i, t in enumerate(tickers):
+                try:
+                    analyzer = MarketAnalyzer()
+                    analyzer.fetch_data(t, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                    analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
+                    analyzer.calculate_ma()
+                    analyzer.calculate_obv()
+                    analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
+                    analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, lookback_window=lookback_window, price_change_lookback=price_change_lookback, price_change_threshold=price_change_threshold)
+                    analyzers[t] = analyzer
+                    
+                    # Check for signals at the latest data point
+                    df = analyzer.data
+                    if not df.empty:
+                        latest = df.iloc[-1]
+                        if latest['MFI超卖反弹'] and latest['均线支持'] and latest['Volume_Surge'] and latest['成交量增加']:
+                            signaling_tickers.append(t)
+                    st.toast(f"成功处理 {t}", icon="✅")
+                except Exception as e:
+                    st.toast(f"股票 {t} 处理失败: {e}", icon="❌")
+                progress_bar.progress((i + 1) / len(tickers))
         
-        # Display data
-        st.success(f'✅ 成功加载 {ticker} 数据')
+        st.toast(f'✅ 成功加载 {len(analyzers)} 个股票数据', icon="✅")
         
-        # Display interactive instructions
-        with st.expander("📖 图表交互说明"):
-            st.markdown("""
-            - **缩放**: 鼠标框选区域或使用滑块调整显示范围
-            - **自动缩放**: Y轴会自动调整以适配当前显示的数据范围
-            - **平移**: 按住鼠标左键拖动图表
-            - **重置**: 双击图表恢复初始视图
-            - **悬停**: 鼠标悬停查看详细数值
-            """)
+        st.session_state.analyzers = analyzers
+        st.session_state.signaling_tickers = signaling_tickers
+        st.session_state.attempted_count = len(tickers)
         
-        # Display plots
+    except Exception as e:
+        st.toast(f"❌ 错误: {e}", icon="❌")
+        st.info("请检查输入的股票代码和日期范围是否正确")
+
+# Display results if data is available
+if st.session_state.analyzers is not None:
+    st.success(f'✅ 成功加载 {len(st.session_state.analyzers)} 个股票数据')
+    
+    col_metric1, col_metric2 = st.columns(2)
+    with col_metric1:
+        st.metric("总股票数", st.session_state.attempted_count)
+    with col_metric2:
+        st.metric("信号股票数", len(st.session_state.signaling_tickers))
+    
+    if st.session_state.signaling_tickers:
+        st.success(f"📈 具有同时激活信号的股票: {', '.join(st.session_state.signaling_tickers)}")
+    else:
+        st.info("🛑 没有股票同时激活所有指定信号")
+    
+    # Display interactive instructions
+    with st.expander("📖 图表交互说明"):
+        st.markdown("""
+        - **缩放**: 鼠标框选区域或使用滑块调整显示范围
+        - **自动缩放**: Y轴会自动调整以适配当前显示的数据范围
+        - **平移**: 按住鼠标左键拖动图表
+        - **重置**: 双击图表恢复初始视图
+        - **悬停**: 鼠标悬停查看详细数值
+        """)
+    
+    selected_ticker = st.selectbox("选择股票查看图表:", list(st.session_state.analyzers.keys()))
+    if selected_ticker:
+        analyzer = st.session_state.analyzers[selected_ticker]
         fig_candle, fig_multi = analyzer.create_figures(analyzer.data)
         
         # Candlestick chart with auto-scaling
@@ -75,7 +123,3 @@ if st.button("🚀 开始分析"):
         
         # Multi-panel chart
         st.plotly_chart(fig_multi, use_container_width=False, config={'displayModeBar': True})
-        
-    except Exception as e:
-        st.error(f"❌ 错误: {e}")
-        st.info("请检查输入的股票代码和日期范围是否正确")

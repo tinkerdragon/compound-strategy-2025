@@ -1,3 +1,4 @@
+# whr_backend.py
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -200,6 +201,8 @@ class MarketAnalyzer:
             True, False
         )
 
+        df['成交量增加'] = df['volume'] > df['volume'].shift(1)
+
         self.data = df.dropna()
 
     def create_figures(self, df):
@@ -260,6 +263,22 @@ class MarketAnalyzer:
                 hovertemplate="Index: %{x}<br>Time: %{customdata}<br>50HR MA: %{y:.4f}<extra></extra>"
             )
         )
+
+        # Add red upward arrows for bullish candle patterns
+        bullish_mask = df['Hammer'] | df['Morning_Star'] | df['Bullish_Engulfing']
+        bullish_indices = np.where(bullish_mask)[0]
+        for i in bullish_indices:
+            fig_candle.add_annotation(
+                x=x_idx[i],
+                y=df.iloc[i]['low'],
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1.5,
+                arrowwidth=2,
+                arrowcolor="red",
+                ax=0,
+                ay=-30  # Offset below the low
+            )
 
         # Update layout with auto-ranging y-axis
         fig_candle.update_layout(
