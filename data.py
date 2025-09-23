@@ -10,7 +10,7 @@ class DataManager:
             'alpha_vantage': os.getenv('ALPHA_VANTAGE_KEY', 'K72Y4TZQHEH5FSJC'),
             'fmp': os.getenv('FMP_KEY', 'XXvJv893Xcda44gojz5fRjENuFoyt2XZ'),
             'marketstack': os.getenv('MARKETSTACK_KEY', '2a44b657a95108570aadee0fc61476ec'),
-            'eodhd': os.getenv('EODHD_KEY', ' 68ad4c715bb122.05778507'),
+            'eodhd': os.getenv('EODHD_KEY', '68ad4c715bb122.05778507'),
             'twelvedata': os.getenv('TWELVEDATA_KEY', '4b8603d1d3f743458b2adfa2b7e6050f'),
             'polygon': os.getenv('POLYGON_KEY', 'tG46_YlaJWzQJ5CaxgG_pGNdsp7ueXsc'),
         }
@@ -32,21 +32,26 @@ class DataManager:
             end_date = datetime.today().strftime('%Y-%m-%d')
         
         for provider in self.PROVIDERS:
-            print(f"Trying provider: {provider}")
-            fetch_func = getattr(self, f'fetch_from_{provider}', None)
-            if fetch_func:
-                df = fetch_func(symbol, start_date, end_date)
-                if not df.empty:
-                    print(f"Data fetched successfully from {provider}")
-                    return df
+            try:
+                print(f"Trying provider: {provider}")
+                fetch_func = getattr(self, f'fetch_from_{provider}', None)
+                if fetch_func:
+                    df = fetch_func(symbol, start_date, end_date)
+                    if not df.empty:
+                        print(f"Data fetched successfully from {provider}")
+                        return df
+                    else:
+                        print(f"No data from {provider}, trying next...")
+                        continue
                 else:
-                    print(f"No data from {provider}, trying next...")
+                    print(f"Function fetch_from_{provider} not found.")
                     continue
-            else:
-                print(f"Function fetch_from_{provider} not found.")
+            except Exception as e:
+                print(f"Error with {provider}: {e}")
                 continue
         
-        raise ValueError("All providers failed to fetch data.")
+        print(f"All providers failed to fetch daily data for {symbol}")
+        return pd.DataFrame()  # Return empty DataFrame instead of raising an error
 
     def fetch_hourly_data(self, symbol: str, start_date: str, end_date: str = None) -> pd.DataFrame:
         """
@@ -62,21 +67,26 @@ class DataManager:
             end_date = datetime.today().strftime('%Y-%m-%d')
         
         for provider in self.HOURLY_PROVIDERS:
-            print(f"Trying provider: {provider} for hourly data")
-            fetch_func = getattr(self, f'fetch_from_{provider}_hourly', None)
-            if fetch_func:
-                df = fetch_func(symbol, start_date, end_date)
-                if not df.empty:
-                    print(f"Hourly data fetched successfully from {provider}")
-                    return df
+            try:
+                print(f"Trying provider: {provider} for hourly data")
+                fetch_func = getattr(self, f'fetch_from_{provider}_hourly', None)
+                if fetch_func:
+                    df = fetch_func(symbol, start_date, end_date)
+                    if not df.empty:
+                        print(f"Hourly data fetched successfully from {provider}")
+                        return df
+                    else:
+                        print(f"No hourly data from {provider}, trying next...")
+                        continue
                 else:
-                    print(f"No hourly data from {provider}, trying next...")
+                    print(f"Function fetch_from_{provider}_hourly not found.")
                     continue
-            else:
-                print(f"Function fetch_from_{provider}_hourly not found.")
+            except Exception as e:
+                print(f"Error with {provider}: {e}")
                 continue
         
-        raise ValueError("All providers failed to fetch hourly data.")
+        print(f"All providers failed to fetch hourly data for {symbol}")
+        return pd.DataFrame()  # Return empty DataFrame instead of raising an error
 
     def fetch_from_polygon(self, symbol, start_date, end_date):
         url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}?apiKey={self.API_KEYS['polygon']}"
@@ -84,6 +94,8 @@ class DataManager:
         resp.raise_for_status()
         results = resp.json().get('results', [])
         df = pd.DataFrame(results)
+        if df.empty:
+            return df
         df = df[['t', 'o', 'h', 'l', 'c', 'v']]
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         df['date'] = pd.to_datetime(df['date'], unit='ms').dt.strftime('%Y-%m-%d')
@@ -95,6 +107,8 @@ class DataManager:
         resp.raise_for_status()
         results = resp.json().get('results', [])
         df = pd.DataFrame(results)
+        if df.empty:
+            return df
         df = df[['t', 'o', 'h', 'l', 'c', 'v']]
         df.columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         df['datetime'] = pd.to_datetime(df['datetime'], unit='ms')
@@ -106,6 +120,8 @@ class DataManager:
         resp.raise_for_status()
         values = resp.json().get('values', [])
         df = pd.DataFrame(values)
+        if df.empty:
+            return df
         df = df[['datetime', 'open', 'high', 'low', 'close', 'volume']]
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         return df
@@ -116,6 +132,8 @@ class DataManager:
         resp.raise_for_status()
         values = resp.json().get('values', [])
         df = pd.DataFrame(values)
+        if df.empty:
+            return df
         df = df[['datetime', 'open', 'high', 'low', 'close', 'volume']]
         return df
 
@@ -125,6 +143,8 @@ class DataManager:
         resp.raise_for_status()
         historical = resp.json().get('historical', [])
         df = pd.DataFrame(historical)
+        if df.empty:
+            return df
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
         return df
 
@@ -134,6 +154,8 @@ class DataManager:
         resp.raise_for_status()
         data = resp.json()
         df = pd.DataFrame(data)
+        if df.empty:
+            return df
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
         df.rename(columns={'date': 'datetime'}, inplace=True)
         return df
@@ -144,6 +166,8 @@ class DataManager:
         resp.raise_for_status()
         data = resp.json().get('Time Series (Daily)', {})
         df = pd.DataFrame.from_dict(data, orient='index')
+        if df.empty:
+            return df
         df.reset_index(inplace=True)
         df.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
@@ -155,6 +179,8 @@ class DataManager:
         resp.raise_for_status()
         data = resp.json().get('Time Series (60min)', {})
         df = pd.DataFrame.from_dict(data, orient='index')
+        if df.empty:
+            return df
         df.reset_index(inplace=True)
         df.columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         df['date'] = df['datetime'].str[:10]
@@ -168,6 +194,8 @@ class DataManager:
         resp.raise_for_status()
         data = resp.json()
         df = pd.DataFrame(data)
+        if df.empty:
+            return df
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
         return df
 
@@ -177,6 +205,8 @@ class DataManager:
         resp.raise_for_status()
         data = resp.json().get('data', [])
         df = pd.DataFrame(data)
+        if df.empty:
+            return df
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
         df['date'] = df['date'].str[:10]
         return df
