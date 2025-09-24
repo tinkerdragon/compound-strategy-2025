@@ -13,13 +13,6 @@ class MarketAnalyzer:
         manager = DataManager()
         self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
         
-        # Convert numeric columns to float, coercing errors to NaN
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
-        self.data[numeric_cols] = self.data[numeric_cols].apply(pd.to_numeric, errors='coerce')
-        
-        # Drop any rows with NaN in numeric columns (optional but recommended to avoid downstream issues)
-        self.data = self.data.dropna(subset=numeric_cols)
-        
         self.data['datetime'] = pd.to_datetime(self.data['datetime'])
         self.data.set_index('datetime', inplace=True)
         # Filter for hours between 13:00 and 19:00
