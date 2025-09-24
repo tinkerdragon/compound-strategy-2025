@@ -270,6 +270,7 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
     else:
         if selected_ticker:
             st.error(f"❌ 股票 {selected_ticker} 的数据不可用")
+    st.balloons()
 else:
     if st.button("🔄 刷新S&P 500列表"):
         st.cache_data.clear()
