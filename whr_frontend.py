@@ -89,6 +89,9 @@ with col2:
 if use_sp500 and len(tickers) > 50:
     st.warning(f"⚠️ 即将分析 {len(tickers)} 只股票，这可能需要 {len(tickers)*2-5} 分钟时间。请耐心等待...")
 
+# Create a container for real-time error display
+error_container = st.container()
+
 if st.button("🚀 开始分析"):
     if not tickers:
         st.error("❌ 请至少输入一个股票代码或启用S&P 500分析")
@@ -101,6 +104,10 @@ if st.button("🚀 开始分析"):
                 successful_count = 0
                 failed_tickers = []
                 
+                # Clear the error container before starting
+                with error_container:
+                    st.empty()
+                
                 for i, t in enumerate(tickers):
                     try:
                         analyzer = MarketAnalyzer()
@@ -109,6 +116,8 @@ if st.button("🚀 开始分析"):
                         # Skip if no data
                         if analyzer.data.empty:
                             failed_tickers.append(t)
+                            with error_container:
+                                st.error(f"{t}: No data returned")
                             continue
                             
                         analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
@@ -136,11 +145,13 @@ if st.button("🚀 开始分析"):
                             if active_signals >= 3:  # At least 3 out of 4 conditions
                                 signaling_tickers.append(t)
                         
-                        st.toast(f"✅ {t} 分析完成 ({i+1}/{len(tickers)})", icon="✅")
+                        st.toast(f" {t} 分析完成 ({i+1}/{len(tickers)})", icon="✅")
                         
                     except Exception as e:
                         failed_tickers.append(t)
-                        st.toast(f"❌ {t} 分析失败: {str(e)[:50]}...", icon="❌")
+                        with error_container:
+                            st.error(f"{t}: {str(e)}")
+                        st.toast(f" {t} 分析失败: {str(e)[:50]}...", icon="❌")
                     
                     progress_bar.progress((i + 1) / len(tickers))
                 
@@ -152,7 +163,7 @@ if st.button("🚀 开始分析"):
                 
                 if failed_tickers:
                     with st.expander(f"❌ 查看失败的股票 ({len(failed_tickers)} 只)"):
-                        st.write(", ".join(failed_tickers[:20]))  # Show first 20 failed
+                        st.write(", ".join(failed_tickers[:20]))
                         if len(failed_tickers) > 20:
                             st.write(f"... 还有 {len(failed_tickers)-20} 只股票失败")
             
@@ -161,7 +172,8 @@ if st.button("🚀 开始分析"):
             st.session_state.attempted_count = len(tickers)
             
         except Exception as e:
-            st.error(f"❌ 分析过程中发生错误: {e}")
+            with error_container:
+                st.error(f"分析过程中发生错误: {e}")
             st.info("请检查网络连接和日期范围是否正确")
 
 # Display results if data is available

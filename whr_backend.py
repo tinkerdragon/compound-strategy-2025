@@ -5,46 +5,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data import DataManager
 
-'''
-买入条件
-四大触发条件：
-1.均线支撑：
-价格回调至20小时均线附近（±3%）确认
-20小时均线仍高于50小时均线（短线趋势未破）
-*（参数：小时级K线，对应30/60分钟周期）*
-2.MFI超卖反弹：
-MFI(14) 跌破30后快速回升 → 资金回流信号
-要求：MFI回升斜率 > 45°（快速脱离超卖区）
-3.OBV量价背离终结：
-价格创新低，但OBV未创新低（下跌动能衰竭）
-OBV出现单根2%以上阳量柱（主力吸筹信号）
-4.K线+成交量准确入场：
-反转K线组合：早晨之星/锤子线/阳包阴（最强买卖点）
-成交量放大：当前成交量 > 前3小时均量 200%
-注意：K线形态是最强的买卖点 前三点均为判断方向用的
-
-
-卖出条件
-
-
-1. 均线破位（对应均线支撑失效）
-价格跌破20小时均线（±3%）且无法快速收回
-20小时均线下穿50小时均线（趋势转弱）
-止损策略：若价格跌破20小时均线并伴随放量下跌，视为趋势反转信号，需离场。
-2. MFI超买回落（对应MFI超卖反弹失效）
-MFI(14) 突破70后快速回落 → 资金流出信号
-MFI回落斜率 > 45°（快速脱离超买区）
-若价格与MFI顶背离（价格新高但MFI走弱），则视为见顶信号
-3. OBV量价背离重现（对应OBV背离终结失效）
-价格创新高，但OBV未创新高（上涨动能衰竭）
-OBV出现单根2%以上阴量柱（主力出货信号）
-若OBV持续下行而价格横盘，警惕趋势反转
-4. K线+成交量确认离场（对应K线入场信号失效）
-反转K线组合：黄昏之星/上吊线/阴包阳（最强卖出信号）
-成交量萎缩：当前成交量 < 前3小时均量 50%（流动性枯竭）
-若放量下跌（成交量 > 前3小时均量200%），则加速离场
-'''
-
 class MarketAnalyzer:
     def __init__(self):
         self.data = []
@@ -52,6 +12,14 @@ class MarketAnalyzer:
     def fetch_data(self, ticker, start_date, end_date):
         manager = DataManager()
         self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
+        
+        # Convert numeric columns to float, coercing errors to NaN
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        self.data[numeric_cols] = self.data[numeric_cols].apply(pd.to_numeric, errors='coerce')
+        
+        # Drop any rows with NaN in numeric columns (optional but recommended to avoid downstream issues)
+        self.data = self.data.dropna(subset=numeric_cols)
+        
         self.data['datetime'] = pd.to_datetime(self.data['datetime'])
         self.data.set_index('datetime', inplace=True)
         # Filter for hours between 13:00 and 19:00
