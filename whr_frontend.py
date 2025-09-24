@@ -13,6 +13,10 @@ if 'signaling_tickers' not in st.session_state:
     st.session_state.signaling_tickers = []
 if 'attempted_count' not in st.session_state:
     st.session_state.attempted_count = 0
+if 'selected_ticker' not in st.session_state:
+    st.session_state.selected_ticker = None
+if 'show_dropdown' not in st.session_state:
+    st.session_state.show_dropdown = True
 
 st.title("美股技术指标分析")
 
@@ -22,6 +26,30 @@ st.markdown("""
         padding-left: 15rem !important;
         padding-right: 15rem !important;
         max-width: 100% !important;
+    }
+    .ticker-button {
+        margin: 5px;
+        padding: 8px 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .ticker-button:hover {
+        background-color: #45a049;
+    }
+    .dropdown-button {
+        margin: 5px;
+        padding: 8px 16px;
+        background-color: #008CBA;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .dropdown-button:hover {
+        background-color: #007399;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -170,6 +198,7 @@ if st.button("🚀 开始分析"):
             st.session_state.analyzers = analyzers
             st.session_state.signaling_tickers = signaling_tickers
             st.session_state.attempted_count = len(tickers)
+            st.session_state.show_dropdown = True  # Reset dropdown visibility after analysis
             
         except Exception as e:
             with error_container:
@@ -189,10 +218,17 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
     
     if st.session_state.signaling_tickers:
         st.success(f"📈 具有强信号的股票 ({len(st.session_state.signaling_tickers)} 只):")
-        signal_cols = st.columns(min(5, len(st.session_state.signaling_tickers)))
-        for i, ticker in enumerate(st.session_state.signaling_tickers):
-            with signal_cols[i % len(signal_cols)]:
-                st.info(f"**{ticker}**")
+        button_container = st.container()
+        with button_container:
+            button_cols = st.columns(5)
+            for i, ticker in enumerate(st.session_state.signaling_tickers):
+                with button_cols[i % 5]:
+                    if st.button(ticker, key=f"btn_{ticker}", help=f"View charts for {ticker}"):
+                        st.session_state.selected_ticker = ticker
+                        st.session_state.show_dropdown = False  # Hide dropdown when button is clicked
+            # Add button to show dropdown
+            st.button("🔍 Show Ticker Dropdown", key="show_dropdown_btn", help="Show the dropdown menu to select other tickers", on_click=lambda: st.session_state.update(show_dropdown=True))
+    
     else:
         st.info("🛑 没有股票满足强信号条件 (至少3/4个买入条件)")
     
@@ -206,17 +242,23 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
         - **悬停**: 鼠标悬停查看详细数值
         """)
     
-    # Show top signal stocks first
-    if st.session_state.signaling_tickers:
-        signal_options = st.session_state.signaling_tickers + list(st.session_state.analyzers.keys())
-        default_signal = st.session_state.signaling_tickers[0] if st.session_state.signaling_tickers else None
-    else:
-        signal_options = list(st.session_state.analyzers.keys())
-        default_signal = signal_options[0] if signal_options else None
+    # Show dropdown only if show_dropdown is True
+    if st.session_state.show_dropdown:
+        signal_options = st.session_state.signaling_tickers + [t for t in st.session_state.analyzers.keys() if t not in st.session_state.signaling_tickers]
+        default_signal = st.session_state.signaling_tickers[0] if st.session_state.signaling_tickers else (signal_options[0] if signal_options else None)
+        selected_ticker = st.selectbox(
+            "选择股票查看图表:",
+            signal_options,
+            index=signal_options.index(default_signal) if default_signal in signal_options else 0,
+            key="ticker_select"
+        )
+        if selected_ticker:
+            st.session_state.selected_ticker = selected_ticker
+            st.session_state.show_dropdown = True  # Keep dropdown visible if used
     
-    selected_ticker = st.selectbox("选择股票查看图表:", signal_options, index=signal_options.index(default_signal) if default_signal in signal_options else 0)
-    
-    if selected_ticker in st.session_state.analyzers:
+    # Display charts for the selected ticker
+    selected_ticker = st.session_state.selected_ticker
+    if selected_ticker and selected_ticker in st.session_state.analyzers:
         analyzer = st.session_state.analyzers[selected_ticker]
         fig_candle, fig_multi = analyzer.create_figures(analyzer.data)
         
@@ -226,7 +268,8 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
         # Multi-panel chart
         st.plotly_chart(fig_multi, use_container_width=False, config={'displayModeBar': True})
     else:
-        st.error(f"❌ 股票 {selected_ticker} 的数据不可用")
+        if selected_ticker:
+            st.error(f"❌ 股票 {selected_ticker} 的数据不可用")
 else:
     if st.button("🔄 刷新S&P 500列表"):
         st.cache_data.clear()
