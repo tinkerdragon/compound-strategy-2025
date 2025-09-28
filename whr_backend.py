@@ -12,6 +12,10 @@ class MarketAnalyzer:
     def fetch_data(self, ticker, start_date, end_date):
         manager = DataManager()
         self.data = manager.fetch_hourly_data(ticker, start_date, end_date)
+
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        self.data[numeric_cols] = self.data[numeric_cols].apply(pd.to_numeric, errors='coerce')
+        self.data = self.data.dropna(subset=numeric_cols)
         
         self.data['datetime'] = pd.to_datetime(self.data['datetime'])
         self.data.set_index('datetime', inplace=True)

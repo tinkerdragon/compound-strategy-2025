@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 import io
+import time
 
 if 'analyzers' not in st.session_state:
     st.session_state.analyzers = None
@@ -17,14 +18,16 @@ if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 if 'show_dropdown' not in st.session_state:
     st.session_state.show_dropdown = True
+if 'last_run_time' not in st.session_state:
+    st.session_state.last_run_time = 0
 
 st.title("美股技术指标分析")
 
 st.markdown("""
     <style>
     .block-container {
-        padding-left: 15rem !important;
-        padding-right: 15rem !important;
+        padding-left: 5rem !important;
+        padding-right: 5rem !important;
         max-width: 100% !important;
     }
     .ticker-button {
@@ -54,7 +57,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Add info about auto-scaling feature
+# Add info about auto-scaling feature in main content
 st.info("📊 提示: K线图支持自动Y轴缩放 - 使用鼠标框选或拖动底部滑块时，Y轴会自动调整以适配可见数据范围")
 
 # Function to get S&P 500 tickers
@@ -79,10 +82,10 @@ def get_sp500_tickers():
         # Fallback to a smaller sample if web scraping fails
         return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'BRK-B', 'JPM', 'UNH']
 
-# Create columns for parameter inputs
-col1, col2 = st.columns(2)
-
-with col1:
+# Sidebar for input controls
+with st.sidebar:
+    st.header("分析设置")
+    
     use_sp500 = st.checkbox("🔥 分析所有S&P 500股票 (约500只)", help="启用后将自动分析S&P 500指数成分股，耗时较长")
     
     if use_sp500:
@@ -102,9 +105,9 @@ with col1:
         st.write(f"结束日期: {end_date.strftime('%Y-%m-%d')} (今日)")
     else:
         end_date = st.date_input("结束日期:", value=None, min_value=None, max_value=None)
+    
+    st.subheader("技术指标参数")
     volume_multiplier = st.slider("成交量激增倍数:", 1.0, 5.0, 2.0, 0.1)
-
-with col2:
     mfi_period = st.slider("MFI 周期:", 1, 50, 14, help="计算MFI的周期长度")
     mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 3, help="用于计算MFI回弹梯度的窗口长度")
     signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 5, help="用于检测MFI摸底回弹的窗口长度")
@@ -113,97 +116,151 @@ with col2:
     price_change_lookback = st.slider("价格变化看回窗口:", 1, 10, 3)
     price_change_threshold = st.slider("价格变化阈值 (%):", 0.0, 20.0, 5.0, 0.5)
 
-# Warning for large analysis
-if use_sp500 and len(tickers) > 50:
-    st.warning(f"⚠️ 即将分析 {len(tickers)} 只股票，这可能需要 {len(tickers)*2-5} 分钟时间。请耐心等待...")
-
 # Create a container for real-time error display
 error_container = st.container()
 
-if st.button("🚀 开始分析"):
+# Define the analysis function
+def perform_analysis():
     if not tickers:
         st.error("❌ 请至少输入一个股票代码或启用S&P 500分析")
-    else:
-        try:
-            with st.spinner(f'正在获取数据并计算指标... (0/{len(tickers)}股票)'):
-                analyzers = {}
-                signaling_tickers = []
-                progress_bar = st.progress(0)
-                successful_count = 0
-                failed_tickers = []
-                
-                # Clear the error container before starting
-                with error_container:
-                    st.empty()
-                
-                for i, t in enumerate(tickers):
-                    try:
-                        analyzer = MarketAnalyzer()
-                        analyzer.fetch_data(t, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                        
-                        # Skip if no data
-                        if analyzer.data.empty:
-                            failed_tickers.append(t)
-                            with error_container:
-                                st.error(f"{t}: No data returned")
-                            continue
-                            
-                        analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
-                        analyzer.calculate_ma()
-                        analyzer.calculate_obv()
-                        analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-                        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, 
-                                              lookback_window=lookback_window, price_change_lookback=price_change_lookback, 
-                                              price_change_threshold=price_change_threshold)
-                        analyzers[t] = analyzer
-                        successful_count += 1
-                        
-                        # Check for signals at the latest data point
-                        df = analyzer.data
-                        if not df.empty:
-                            latest = df.iloc[-1]
-                            # More flexible signal condition - at least 3 out of 4 conditions
-                            signal_conditions = [
-                                latest.get('MFI超卖反弹', False),
-                                latest.get('均线支持', False), 
-                                latest.get('Volume_Surge', False),
-                                latest.get('成交量增加', False)
-                            ]
-                            active_signals = sum(signal_conditions)
-                            if active_signals >= 3:  # At least 3 out of 4 conditions
-                                signaling_tickers.append(t)
-                        
-                        st.toast(f" {t} 分析完成 ({i+1}/{len(tickers)})", icon="✅")
-                        
-                    except Exception as e:
+        return False
+    try:
+        with st.spinner(f'正在获取数据并计算指标... (0/{len(tickers)}股票)'):
+            analyzers = {}
+            signaling_tickers = []
+            progress_bar = st.progress(0)
+            successful_count = 0
+            failed_tickers = []
+            
+            # Clear the error container before starting
+            with error_container:
+                st.empty()
+            
+            for i, t in enumerate(tickers):
+                try:
+                    analyzer = MarketAnalyzer()
+                    analyzer.fetch_data(t, start_date.strftime('%Y-%m-%d') if start_date else None, end_date.strftime('%Y-%m-%d') if end_date else None)
+                    
+                    # Skip if no data
+                    if analyzer.data.empty:
                         failed_tickers.append(t)
                         with error_container:
-                            st.error(f"{t}: {str(e)}")
-                        st.toast(f" {t} 分析失败: {str(e)[:50]}...", icon="❌")
+                            st.error(f"{t}: No data returned")
+                        continue
+                        
+                    analyzer.calculate_mfi(period=mfi_period, slope_window=mfi_slope_window)
+                    analyzer.calculate_ma()
+                    analyzer.calculate_obv()
+                    analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
+                    analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold, 
+                                            lookback_window=lookback_window, price_change_lookback=price_change_lookback, 
+                                            price_change_threshold=price_change_threshold)
+                    analyzers[t] = analyzer
+                    successful_count += 1
                     
-                    progress_bar.progress((i + 1) / len(tickers))
+                    # Check for signals at the latest data point
+                    df = analyzer.data
+                    if not df.empty:
+                        latest = df.iloc[-1]
+                        # More flexible signal condition - at least 3 out of 4 conditions
+                        signal_conditions = [
+                            latest.get('MFI超卖反弹', False),
+                            latest.get('均线支持', False), 
+                            latest.get('Volume_Surge', False),
+                            latest.get('成交量增加', False)
+                        ]
+                        active_signals = sum(signal_conditions)
+                        if active_signals >= 3:  # At least 3 out of 4 conditions
+                            signaling_tickers.append(t)
+                    
+                    st.toast(f" {t} 分析完成 ({i+1}/{len(tickers)})", icon="✅")
+                    
+                except Exception as e:
+                    failed_tickers.append(t)
+                    with error_container:
+                        st.error(f"{t}: {str(e)}")
+                    st.toast(f" {t} 分析失败: {str(e)[:50]}...", icon="❌")
                 
-                # Update progress summary
-                progress_text = f"完成! 成功: {successful_count}/{len(tickers)} 股票"
-                if failed_tickers:
-                    progress_text += f" | 失败: {len(failed_tickers)} 股票"
-                st.success(progress_text)
-                
-                if failed_tickers:
-                    with st.expander(f"❌ 查看失败的股票 ({len(failed_tickers)} 只)"):
-                        st.write(", ".join(failed_tickers[:20]))
-                        if len(failed_tickers) > 20:
-                            st.write(f"... 还有 {len(failed_tickers)-20} 只股票失败")
+                progress_bar.progress((i + 1) / len(tickers))
             
-            st.session_state.analyzers = analyzers
-            st.session_state.signaling_tickers = signaling_tickers
-            st.session_state.attempted_count = len(tickers)
-            st.session_state.show_dropdown = True  # Reset dropdown visibility after analysis
+            # Update progress summary
+            progress_text = f"完成! 成功: {successful_count}/{len(tickers)} 股票"
+            if failed_tickers:
+                progress_text += f" | 失败: {len(failed_tickers)} 股票"
+            st.success(progress_text)
             
-        except Exception as e:
-            with error_container:
-                st.error(f"分析过程中发生错误: {e}")
-            st.info("请检查网络连接和日期范围是否正确")
+            if failed_tickers:
+                with st.expander(f"❌ 查看失败的股票 ({len(failed_tickers)} 只)"):
+                    st.write(", ".join(failed_tickers[:20]))
+                    if len(failed_tickers) > 20:
+                        st.write(f"... 还有 {len(failed_tickers)-20} 只股票失败")
+        
+        st.session_state.analyzers = analyzers
+        st.session_state.signaling_tickers = signaling_tickers
+        st.session_state.attempted_count = len(tickers)
+        st.session_state.show_dropdown = True  # Reset dropdown visibility after analysis
+        
+        # Compare with previous signaling tickers
+        if 'previous_signaling_tickers' in st.session_state:
+            prev = set(st.session_state.previous_signaling_tickers)
+            current = set(signaling_tickers)
+            new_signals = current - prev
+            disappeared = prev - current
+            stable = current & prev
+            st.subheader("Signaling Stocks Comparison")
+            if new_signals:
+                st.success(f"New signaling stocks: {', '.join(sorted(new_signals))}")
+            if disappeared:
+                st.warning(f"Disappeared signaling stocks: {', '.join(sorted(disappeared))}")
+            if stable:
+                st.info(f"Stable signaling stocks: {', '.join(sorted(stable))}")
+        
+        st.session_state.previous_signaling_tickers = signaling_tickers.copy()
+        
+        return True
+    except Exception as e:
+        with error_container:
+            st.error(f"分析过程中发生错误: {e}")
+        st.info("请检查网络连接和日期范围是否正确")
+        return False
+
+# Sidebar button for analysis
+with st.sidebar:
+    if st.button("🚀 开始分析"):
+        perform_analysis()
+
+# Periodic analysis setup in sidebar
+with st.sidebar:
+    st.subheader("定期分析")
+    periodic = st.checkbox("启用定期分析", value=False)
+    period_minutes = 5
+    if periodic:
+        period_minutes = st.slider("分析周期 (分钟)", min_value=1, max_value=60, value=5)
+        now = time.time()
+        time_passed = now - st.session_state.last_run_time > period_minutes * 60
+        if time_passed:
+            st.info("正在执行定期分析...")
+            success = perform_analysis()
+            if success:
+                st.session_state.last_run_time = time.time()
+        
+        remaining_seconds = (st.session_state.last_run_time + period_minutes * 60 - now)
+        if remaining_seconds < 0:
+            remaining_seconds = 0
+        st.write(f"下次自动分析将在 {remaining_seconds / 60:.1f} 分钟后进行")
+        
+        # Set JavaScript timeout to reload the page slightly after the next expected run time
+        milliseconds = int(remaining_seconds * 1000) + 1000  # +1 second buffer
+        st.components.v1.html(
+            f"""
+            <script>
+            setTimeout(function(){{
+                window.location.reload(true);
+            }}, {milliseconds});
+            </script>
+            """,
+            height=0,
+        )
 
 # Display results if data is available
 if st.session_state.analyzers is not None and st.session_state.analyzers:
@@ -223,24 +280,14 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
             button_cols = st.columns(5)
             for i, ticker in enumerate(st.session_state.signaling_tickers):
                 with button_cols[i % 5]:
-                    if st.button(ticker, key=f"btn_{ticker}", help=f"View charts for {ticker}"):
+                    if st.button(ticker, key=f"btn_{ticker}", help=f"查看 {ticker} 的图表"):
                         st.session_state.selected_ticker = ticker
                         st.session_state.show_dropdown = False  # Hide dropdown when button is clicked
             # Add button to show dropdown
-            st.button("🔍 Show Ticker Dropdown", key="show_dropdown_btn", help="Show the dropdown menu to select other tickers", on_click=lambda: st.session_state.update(show_dropdown=True))
+            st.button("🔍 显示股票选择下拉菜单", key="show_dropdown_btn", help="显示下拉菜单以选择其他股票", on_click=lambda: st.session_state.update(show_dropdown=True))
     
     else:
         st.info("🛑 没有股票满足强信号条件 (至少3/4个买入条件)")
-    
-    # Display interactive instructions
-    with st.expander("📖 图表交互说明"):
-        st.markdown("""
-        - **缩放**: 鼠标框选区域或使用滑块调整显示范围
-        - **自动缩放**: Y轴会自动调整以适配当前显示的数据范围
-        - **平移**: 按住鼠标左键拖动图表
-        - **重置**: 双击图表恢复初始视图
-        - **悬停**: 鼠标悬停查看详细数值
-        """)
     
     # Show dropdown only if show_dropdown is True
     if st.session_state.show_dropdown:
@@ -270,8 +317,7 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
     else:
         if selected_ticker:
             st.error(f"❌ 股票 {selected_ticker} 的数据不可用")
-    st.balloons()
 else:
-    if st.button("🔄 刷新S&P 500列表"):
+    if st.sidebar.button("🔄 刷新S&P 500列表"):
         st.cache_data.clear()
         st.rerun()
