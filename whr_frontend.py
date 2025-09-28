@@ -244,23 +244,60 @@ with st.sidebar:
             if success:
                 st.session_state.last_run_time = time.time()
         
-        remaining_seconds = (st.session_state.last_run_time + period_minutes * 60 - now)
-        if remaining_seconds < 0:
-            remaining_seconds = 0
-        st.write(f"下次自动分析将在 {remaining_seconds / 60:.1f} 分钟后进行")
-        
-        # Set JavaScript timeout to reload the page slightly after the next expected run time
-        milliseconds = int(remaining_seconds * 1000) + 1000  # +1 second buffer
-        st.components.v1.html(
-            f"""
-            <script>
-            setTimeout(function(){{
-                window.location.reload(true);
-            }}, {milliseconds});
-            </script>
-            """,
-            height=0,
-        )
+        # Create a dedicated container for the countdown
+        countdown_container = st.container()
+        with countdown_container:
+            # Calculate initial remaining time
+            remaining_seconds = (st.session_state.last_run_time + period_minutes * 60 - time.time())
+            if remaining_seconds < 0:
+                remaining_seconds = 0
+            
+            # Placeholder for countdown display
+            countdown_placeholder = st.empty()
+            
+            # Update countdown every second
+            while remaining_seconds > 0:
+                minutes = int(remaining_seconds // 60)
+                seconds = int(remaining_seconds % 60)
+                countdown_placeholder.markdown(
+                    f"""
+                    <style>
+                    .countdown-container {{
+                        text-align: center;
+                        padding: 15px;
+                        background-color: #f0f2f6;
+                        border-radius: 10px;
+                        margin-top: 10px;
+                        border: 2px solid #007399;
+                    }}
+                    .countdown-text {{
+                        font-size: 24px;
+                        font-weight: bold;
+                        color: #333;
+                    }}
+                    .countdown-timer {{
+                        font-size: 48px;
+                        font-weight: bold;
+                        color: #007399;
+                        margin: 10px 0;
+                        font-family: monospace;
+                    }}
+                    </style>
+                    <div class="countdown-container">
+                        <div class="countdown-text">下次自动分析</div>
+                        <div class="countdown-timer">{minutes:02d}:{seconds:02d}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                time.sleep(1)
+                remaining_seconds = (st.session_state.last_run_time + period_minutes * 60 - time.time())
+                if remaining_seconds <= 0:
+                    st.info("正在执行定期分析...")
+                    success = perform_analysis()
+                    if success:
+                        st.session_state.last_run_time = time.time()
+                    break
 
 # Display results if data is available
 if st.session_state.analyzers is not None and st.session_state.analyzers:
