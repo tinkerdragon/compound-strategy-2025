@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data import DataManager
 
+
 class MarketAnalyzer:
     def __init__(self):
         self.data = []
@@ -16,7 +17,7 @@ class MarketAnalyzer:
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
         self.data[numeric_cols] = self.data[numeric_cols].apply(pd.to_numeric, errors='coerce')
         self.data = self.data.dropna(subset=numeric_cols)
-        
+
         self.data['datetime'] = pd.to_datetime(self.data['datetime'])
         self.data.set_index('datetime', inplace=True)
         # Filter for hours between 13:00 and 19:00
@@ -27,24 +28,24 @@ class MarketAnalyzer:
         trading_days = daily_volume[daily_volume > 0].index
         self.data = self.data[self.data['date'].isin(trading_days)]
         self.data = self.data.drop(columns=['date'])
-    
+
     def show_data(self):
         """Display the first few rows of the stored data sequence."""
         return self.data
 
     def calculate_mfi(self, period=14, slope_window=3):
         df = self.data.copy()
-        
+
         df['Typical_Price'] = (df['high'] + df['low'] + df['close']) / 3
         df['Raw_Money_Flow'] = df['Typical_Price'] * df['volume']
-        
+
         df['Price_Change'] = df['Typical_Price'].diff()
         df['Positive_Flow'] = np.where(df['Price_Change'] > 0, df['Raw_Money_Flow'], 0)
         df['Negative_Flow'] = np.where(df['Price_Change'] < 0, df['Raw_Money_Flow'], 0)
-        
+
         positive_sum = df['Positive_Flow'].rolling(window=period).sum()
         negative_sum = df['Negative_Flow'].rolling(window=period).sum()
-        
+
         df['Money_Flow_Ratio'] = positive_sum / (negative_sum + 1e-10)
         df['INDC_MFI'] = 100 - (100 / (1 + df['Money_Flow_Ratio']))
 
@@ -59,76 +60,79 @@ class MarketAnalyzer:
 
         df['INDC_MFI_SLOPE'] = df['INDC_MFI'].rolling(window=slope_window).apply(calc_slope, raw=False)
 
-        df = df.drop(['Typical_Price', 'Raw_Money_Flow', 'Price_Change', 
-                    'Positive_Flow', 'Negative_Flow', 'Money_Flow_Ratio'], axis=1).dropna()
-        
+        df = df.drop(['Typical_Price', 'Raw_Money_Flow', 'Price_Change',
+                      'Positive_Flow', 'Negative_Flow', 'Money_Flow_Ratio'], axis=1).dropna()
+
         self.data = df
         return 'MFI calculation completed.'
-    
+
     def calculate_obv(self):
         df = self.data.copy()
-        
+
         df['Price_Change'] = df['close'].diff()
         df['Direction'] = np.where(df['Price_Change'] > 0, 1, np.where(df['Price_Change'] < 0, -1, 0))
-        
+
         df['INDC_OBV'] = (df['volume'] * df['Direction']).cumsum()
         df = df.drop(['Price_Change', 'Direction'], axis=1).dropna()
-        
+
         self.data = df
         return 'OBV calculation completed.'
-    
+
     def calculate_ma(self):
         df = self.data.copy()
         df['INDC_20HR_MA'] = df['close'].rolling(window=20).mean()
         df['INDC_50HR_MA'] = df['close'].rolling(window=50).mean()
         self.data = df
         return '20-hour MA calculated.'
-    
+
     def calculate_candle_patterns(self, volume_multiplier=2.0):
         df = self.data.copy()
-        
+
         df['body'] = abs(df['close'] - df['open'])
         df['lower_wick'] = df[['open', 'close']].min(axis=1) - df['low']
         df['upper_wick'] = df['high'] - df[['open', 'close']].max(axis=1)
         df['Hammer'] = (df['lower_wick'] >= 2 * df['body']) & (df['upper_wick'] <= 0.5 * df['body'])
-        
+
         df['Bullish_Engulfing'] = (df['close'].shift(1) < df['open'].shift(1)) & \
                                   (df['close'] > df['open']) & \
                                   (df['open'] < df['close'].shift(1)) & \
                                   (df['close'] > df['open'].shift(1))
-        
+
         df['Morning_Star'] = (df['close'].shift(2) < df['open'].shift(2)) & \
-                             (abs(df['close'].shift(1) - df['open'].shift(1)) < 0.3 * (df['high'].shift(1) - df['low'].shift(1))) & \
+                             (abs(df['close'].shift(1) - df['open'].shift(1)) < 0.3 * (
+                                         df['high'].shift(1) - df['low'].shift(1))) & \
                              (df['open'].shift(1) < df['close'].shift(2)) & \
                              (df['close'] > df['open']) & \
                              (df['close'] > (df['open'].shift(2) + df['close'].shift(2)) / 2)
-        
+
         df['Shooting_Star'] = (df['upper_wick'] >= 2 * df['body']) & (df['lower_wick'] <= 0.5 * df['body'])
-        
+
         df['Bearish_Engulfing'] = (df['close'].shift(1) > df['open'].shift(1)) & \
                                   (df['close'] < df['open']) & \
                                   (df['open'] > df['close'].shift(1)) & \
                                   (df['close'] < df['open'].shift(1))
-        
+
         df['Evening_Star'] = (df['close'].shift(2) > df['open'].shift(2)) & \
-                             (abs(df['close'].shift(1) - df['open'].shift(1)) < 0.3 * (df['high'].shift(1) - df['low'].shift(1))) & \
+                             (abs(df['close'].shift(1) - df['open'].shift(1)) < 0.3 * (
+                                         df['high'].shift(1) - df['low'].shift(1))) & \
                              (df['open'].shift(1) > df['close'].shift(2)) & \
                              (df['close'] < df['open']) & \
                              (df['close'] < (df['open'].shift(2) + df['close'].shift(2)) / 2)
-        
+
         df['prev_avg_vol'] = df['volume'].shift(1).rolling(3).mean()
         df['Volume_Surge'] = df['volume'] > volume_multiplier * df['prev_avg_vol']
-        
+
         df = df.drop(['body', 'lower_wick', 'upper_wick', 'prev_avg_vol'], axis=1)
-        
+
         self.data = df.dropna()
         return 'Candle patterns calculated.'
-    
+
     def drop(self):
         self.data = self.data.dropna()
         return 'Indicators calculated and data updated.'
-    
-    def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3, price_change_lookback=3, price_change_threshold=5.0):
+
+    def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3, price_change_lookback=3,
+                       price_change_threshold=5.0):
         df = self.data.copy()
         df['均线支持'] = np.where(
             (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
@@ -137,26 +141,26 @@ class MarketAnalyzer:
         )
 
         df['MFI超卖反弹'] = np.where(
-            (df['INDC_MFI'].rolling(window=signal_window).min() < 30) & 
+            (df['INDC_MFI'].rolling(window=signal_window).min() < 30) &
             (df['INDC_MFI_SLOPE'] >= slope_threshold),
             True, False
         )
 
         df['MFI超买回落'] = np.where(
-            (df['INDC_MFI'].rolling(window=signal_window).max() > 70) & 
+            (df['INDC_MFI'].rolling(window=signal_window).max() > 70) &
             (df['INDC_MFI_SLOPE'] < -slope_threshold),
             True, False
         )
 
         df['MFI顶背离'] = np.where(
-            (df['close'] > df['close'].shift(1)) & 
+            (df['close'] > df['close'].shift(1)) &
             (df['INDC_MFI'] < df['INDC_MFI'].shift(1)) &
             (df['INDC_MFI'] > 70),
             True, False
         )
 
         df['OBV熊背离'] = np.where(
-            (df['close'] > df['close'].shift(1)) & 
+            (df['close'] > df['close'].shift(1)) &
             (df['INDC_OBV'] < df['INDC_OBV'].shift(1)),
             True, False
         )
@@ -177,7 +181,7 @@ class MarketAnalyzer:
         if not all(col in df.columns for col in buy_cols + sell_cols):
             missing = set(buy_cols + sell_cols) - set(df.columns)
             raise ValueError(f"Missing columns: {missing}")
-        
+
         # Use numeric index for the x-axis in all plots
         x_idx = np.arange(len(df))
         # Keep readable time in hover (if index is datetime-like)
@@ -271,7 +275,7 @@ class MarketAnalyzer:
             margin=dict(l=50, r=50, t=100, b=50),
             showlegend=True,
         )
-        
+
         # Enable auto-ranging on zoom for the main plot area as well
         fig_candle.update_xaxes(rangeslider_yaxis_rangemode='match')
 

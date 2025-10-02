@@ -15,37 +15,39 @@ mode = st.selectbox("Mode", ["Fallback", "Individual"])
 provider = None
 if mode == "Individual":
     dm = DataManager()  # Instantiate early to access PROVIDERS
-    provider = st.selectbox("Provider", dm.PROVIDERS)
+    if timeframe == "Daily":
+        providers = dm.PROVIDERS
+    else:
+        providers = dm.HOURLY_PROVIDERS
+    provider = st.selectbox("Provider", providers)
 
 if st.button("Fetch Data"):
     dm = DataManager()
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
     
-    try:
-        if timeframe == "Daily":
-            if mode == "Fallback":
-                df = dm.fetch_daily_data(symbol, start_str, end_str)
-            else:
-                fetch_func = getattr(dm, f'fetch_from_{provider}')
-                st.write(f"Fetching daily data from {provider}")
-                df = fetch_func(symbol, start_str, end_str)
-                if df.empty:
-                    st.write(f"No data fetched from {provider}")
-        else:  # Hourly
-            if mode == "Fallback":
-                df = dm.fetch_hourly_data(symbol, start_str, end_str)
-            else:
-                fetch_func = getattr(dm, f'fetch_from_{provider}_hourly')
-                st.write(f"Fetching hourly data from {provider}")
-                df = fetch_func(symbol, start_str, end_str)
-                if df.empty:
-                    st.write(f"No data fetched from {provider}")
-        
-        if not df.empty:
-            st.success("Data fetched successfully!")
-            st.dataframe(df)
+
+    if timeframe == "Daily":
+        if mode == "Fallback":
+            df = dm.fetch_daily_data(symbol, start_str, end_str)
         else:
-            st.warning("No data available for the given parameters.")
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
+            fetch_func = getattr(dm, f'fetch_from_{provider}')
+            st.write(f"Fetching daily data from {provider}")
+            df = fetch_func(symbol, start_str, end_str)
+            if df.empty:
+                st.write(f"No data fetched from {provider}")
+    else:  # Hourly
+        if mode == "Fallback":
+            df = dm.fetch_hourly_data(symbol, start_str, end_str)
+        else:
+            fetch_func = getattr(dm, f'fetch_from_{provider}_hourly')
+            st.write(f"Fetching hourly data from {provider}")
+            df = fetch_func(symbol, start_str, end_str)
+            if df.empty:
+                st.write(f"No data fetched from {provider}")
+    
+    if not df.empty:
+        st.success("Data fetched successfully!")
+        st.dataframe(df)
+    else:
+        st.warning("No data available for the given parameters.")
