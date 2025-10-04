@@ -9,7 +9,7 @@ import io
 import uuid
 
 # Load sector data
-sectors_df = pd.read_csv("C:/Users/stanley/Downloads/nasdaq_screener_1759583571236.csv")
+sectors_df = pd.read_csv("nasdaq_screener_1759583571236.csv")
 sectors = sorted([s for s in sectors_df['Sector'].dropna().unique() if s])
 
 if 'analyzers' not in st.session_state:
