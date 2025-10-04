@@ -19,7 +19,7 @@ class DataManager:
             'tiingo': os.getenv('TIINGO_KEY', '683357598426d16b75051dbfc3dda57d029ce3bd'),
         }
 
-        self.HOURLY_PROVIDERS = ['polygon', 'yahoo', 'twelvedata', 'fmp', 'alpha_vantage', 'tiingo', 'marketstack', 'stockdata']
+        self.HOURLY_PROVIDERS = ['yahoo', 'polygon', 'twelvedata', 'fmp', 'alpha_vantage', 'tiingo', 'marketstack', 'stockdata']
 
     def fetch_hourly_data(self, symbol: str, start_date: str, end_date: str = None) -> pd.DataFrame:
         """

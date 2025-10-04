@@ -6,6 +6,11 @@ from datetime import datetime
 import pandas as pd
 import requests
 import io
+import uuid
+
+# Load sector data
+sectors_df = pd.read_csv("C:/Users/stanley/Downloads/nasdaq_screener_1759583571236.csv")
+sectors = sorted([s for s in sectors_df['Sector'].dropna().unique() if s])
 
 if 'analyzers' not in st.session_state:
     st.session_state.analyzers = None
@@ -17,6 +22,8 @@ if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None
 if 'show_dropdown' not in st.session_state:
     st.session_state.show_dropdown = True
+if 'use_sector_filter' not in st.session_state:
+    st.session_state.use_sector_filter = False
 
 st.title("美股技术指标分析")
 
@@ -83,17 +90,28 @@ def get_sp500_tickers():
 col1, col2 = st.columns(2)
 
 with col1:
-    use_sp500 = st.checkbox("🔥 分析所有S&P 500股票 (约500只)", help="启用后将自动分析S&P 500指数成分股，耗时较长")
+    # Toggle between S&P 500 and sector filter
+    analysis_mode = st.radio("选择分析模式:", ["S&P 500股票", "按行业筛选"], key="analysis_mode",
+                            on_change=lambda: st.session_state.update(use_sector_filter=st.session_state.analysis_mode == "按行业筛选"))
 
-    if use_sp500:
+    if st.session_state.use_sector_filter:
+        selected_sectors = st.multiselect("选择要分析的行业:", sectors, help="选择行业以分析相关股票")
+        ticker_input = st.text_input("输入额外股票代码 (逗号分隔):", "", help="可添加其他股票")
+        extra_tickers = [t.strip().upper() for t in ticker_input.split(',') if t.strip()]
+        if selected_sectors:
+            filtered_tickers = sectors_df[sectors_df['Sector'].isin(selected_sectors)]['Symbol'].tolist()
+            filtered_tickers = [t.replace('.', '-') for t in filtered_tickers]
+        else:
+            filtered_tickers = []
+        tickers = filtered_tickers + extra_tickers
+        st.info(f"📊 将分析 {len(filtered_tickers)} 只行业股票 + {len(extra_tickers)} 只额外股票 = 总计 {len(tickers)} 只股票")
+    else:
+        use_sp500 = True
         ticker_input = st.text_input("输入额外股票代码 (逗号分隔):", "", help="除了S&P 500外，可添加其他股票")
         extra_tickers = [t.strip().upper() for t in ticker_input.split(',') if t.strip()]
         sp500_tickers = get_sp500_tickers()
         tickers = sp500_tickers + extra_tickers
         st.info(f"📊 将分析 {len(sp500_tickers)} 只S&P 500股票 + {len(extra_tickers)} 只额外股票 = 总计 {len(tickers)} 只股票")
-    else:
-        ticker_input = st.text_input("输入美股代码列表 (e.g. AAPL,GOOG,MSFT):", "AAPL")
-        tickers = [t.strip().upper() for t in ticker_input.split(',') if t.strip()]
 
     start_date = st.date_input("开始日期:", value=None, min_value=None, max_value=None)
     use_today = st.checkbox("使用今天日期", value=False)
@@ -114,7 +132,7 @@ with col2:
     price_change_threshold = st.slider("价格变化阈值 (%):", 0.0, 20.0, 4.0, 0.5)
 
 # Warning for large analysis
-if use_sp500 and len(tickers) > 50:
+if len(tickers) > 50:
     st.warning(f"⚠️ 即将分析 {len(tickers)} 只股票，请耐心等待...")
 
 # Create a container for real-time error display
@@ -122,10 +140,10 @@ error_container = st.container()
 
 if st.button("🚀 开始分析"):
     if not tickers:
-        st.error("❌ 请至少输入一个股票代码或启用S&P 500分析")
+        st.error("❌ 请至少输入一个股票代码或选择行业/S&P 500分析")
     else:
         try:
-            with st.spinner(f'正在获取数据并计算指标... (0/{len(tickers)}股票)'):
+            with st.spinner(f'正在获取数据并计算指标...'):
                 analyzers = {}
                 signaling_tickers = []
                 progress_bar = st.progress(0)
