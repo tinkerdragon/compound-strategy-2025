@@ -24,6 +24,10 @@ if 'show_dropdown' not in st.session_state:
     st.session_state.show_dropdown = True
 if 'use_sector_filter' not in st.session_state:
     st.session_state.use_sector_filter = False
+if 'signal_mode' not in st.session_state:
+    st.session_state.signal_mode = "Buy Signals"
+if 'selected_signals' not in st.session_state:
+    st.session_state.selected_signals = []
 
 st.title("美股技术指标分析")
 
@@ -123,6 +127,29 @@ with col1:
     volume_multiplier = st.slider("成交量激增倍数:", 1.0, 5.0, 2.0, 0.1)
 
 with col2:
+    # Signal mode selection
+    signal_mode = st.radio("选择信号模式:", ["Buy Signals", "Sell Signals"], key="signal_mode",
+                           on_change=lambda: st.session_state.update(signal_mode=st.session_state.signal_mode))
+
+    # Signal selection based on mode
+    buy_signals = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge', '价格上涨']
+    sell_signals = ['MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
+    
+    if st.session_state.signal_mode == "Buy Signals":
+        signal_options = buy_signals
+        default_signals = ['均线支持', 'MFI超卖反弹', 'Volume_Surge', 'Bullish_Engulfing']
+    else:
+        signal_options = sell_signals
+        default_signals = ['MFI超买回落', 'OBV熊背离', 'Volume_Surge', 'Bearish_Engulfing']
+
+    selected_signals = st.multiselect(
+        "选择要检测的信号:", 
+        signal_options, 
+        default=default_signals,
+        key="selected_signals",
+        help="选择要分析的信号类型"
+    )
+
     mfi_period = st.slider("MFI 周期:", 1, 50, 15, help="计算MFI的周期长度")
     mfi_slope_window = st.slider("MFI 梯度计算周期:", 1, 10, 4, help="用于计算MFI回弹梯度的窗口长度")
     signal_window = st.slider("MFI 信号检测窗口长度:", 1, 50, 10, help="用于检测MFI摸底回弹的窗口长度")
@@ -141,6 +168,8 @@ error_container = st.container()
 if st.button("🚀 开始分析"):
     if not tickers:
         st.error("❌ 请至少输入一个股票代码或选择行业/S&P 500分析")
+    elif not st.session_state.selected_signals:
+        st.error("❌ 请至少选择一个信号类型")
     else:
         try:
             with st.spinner(f'正在获取数据并计算指标...'):
@@ -170,10 +199,15 @@ if st.button("🚀 开始分析"):
                         analyzer.calculate_ma()
                         analyzer.calculate_obv()
                         analyzer.calculate_candle_patterns(volume_multiplier=volume_multiplier)
-                        analyzer.generate_flags(signal_window=signal_window, slope_threshold=slope_threshold,
-                                               lookback_window=lookback_window,
-                                               price_change_lookback=price_change_lookback,
-                                               price_change_threshold=price_change_threshold)
+                        analyzer.generate_flags(
+                            signal_window=signal_window, 
+                            slope_threshold=slope_threshold,
+                            lookback_window=lookback_window,
+                            price_change_lookback=price_change_lookback,
+                            price_change_threshold=price_change_threshold,
+                            selected_signals=st.session_state.selected_signals,
+                            signal_mode=st.session_state.signal_mode
+                        )
                         analyzers[t] = analyzer
                         successful_count += 1
 
@@ -181,17 +215,11 @@ if st.button("🚀 开始分析"):
                         df = analyzer.data
                         if not df.empty:
                             latest = df.iloc[-1]
-                            # More flexible signal condition - at least 3 out of 4 conditions
-                            signal_conditions = [
-                                latest.get('MFI超卖反弹', False),
-                                latest.get('均线支持', False),
-                                latest.get('Volume_Surge', False),
-                                latest.get('Bullish_Engulfing', False),
-                                latest.get('Morning_Star', False),
-                                latest.get('Hammer', False)
-                            ]
+                            signal_conditions = [latest.get(signal, False) for signal in st.session_state.selected_signals]
                             active_signals = sum(signal_conditions)
-                            if active_signals >= 3:  # At least 3 out of 4 conditions
+                            # Require at least 3 signals or all selected signals if fewer than 3
+                            required_signals = min(3, len(st.session_state.selected_signals))
+                            if active_signals >= required_signals:
                                 signaling_tickers.append(t)
 
                         st.toast(f" {t} 分析完成 ({i + 1}/{len(tickers)})", icon="✅")
@@ -258,7 +286,8 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
         st.caption("📋 Copy the list above (comma-separated, no spaces) to clipboard")
 
     else:
-        st.info("🛑 没有股票满足强信号条件 (至少3/4个买入条件)")
+        required_signals = min(3, len(st.session_state.selected_signals))
+        st.info(f"🛑 没有股票满足强信号条件 (至少{required_signals}/{len(st.session_state.selected_signals)}个{st.session_state.signal_mode})")
 
     # Show dropdown only if show_dropdown is True
     if st.session_state.show_dropdown:
@@ -280,7 +309,7 @@ if st.session_state.analyzers is not None and st.session_state.analyzers:
     selected_ticker = st.session_state.selected_ticker
     if selected_ticker and selected_ticker in st.session_state.analyzers:
         analyzer = st.session_state.analyzers[selected_ticker]
-        fig_candle, fig_multi = analyzer.create_figures(analyzer.data)
+        fig_candle, fig_multi = analyzer.create_figures(analyzer.data, st.session_state.selected_signals, st.session_state.signal_mode)
 
         # Candlestick chart with auto-scaling
         st.plotly_chart(fig_candle, use_container_width=False, config={'displayModeBar': True})

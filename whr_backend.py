@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data import DataManager
 
-
 class MarketAnalyzer:
     def __init__(self):
         self.data = []
@@ -132,71 +131,86 @@ class MarketAnalyzer:
         return 'Indicators calculated and data updated.'
 
     def generate_flags(self, signal_window=5, slope_threshold=1.0, lookback_window=3, price_change_lookback=3,
-                       price_change_threshold=5.0):
+                       price_change_threshold=5.0, selected_signals=None, signal_mode="Buy Signals"):
         df = self.data.copy()
-        df['均线支持'] = np.where(
-            (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
-            (df['INDC_20HR_MA'] > df['INDC_50HR_MA']),
-            True, False
-        )
+        selected_signals = selected_signals or []
 
-        df['MFI超卖反弹'] = np.where(
-            (df['INDC_MFI'].rolling(window=signal_window).min() < 30) &
-            (df['INDC_MFI_SLOPE'] >= slope_threshold),
-            True, False
-        )
+        # Define all possible signals
+        if signal_mode == "Buy Signals":
+            signal_definitions = {
+                '均线支持': lambda df: np.where(
+                    (df['close'] >= df['INDC_20HR_MA'] * 0.97) & (df['close'] <= df['INDC_20HR_MA'] * 1.03) &
+                    (df['INDC_20HR_MA'] > df['INDC_50HR_MA']),
+                    True, False
+                ),
+                'MFI超卖反弹': lambda df: np.where(
+                    (df['INDC_MFI'].rolling(window=signal_window).min() < 30) &
+                    (df['INDC_MFI_SLOPE'] >= slope_threshold),
+                    True, False
+                ),
+                'Hammer': lambda df: df['Hammer'],
+                'Morning_Star': lambda df: df['Morning_Star'],
+                'Bullish_Engulfing': lambda df: df['Bullish_Engulfing'],
+                'Volume_Surge': lambda df: df['Volume_Surge'],
+                '价格上涨': lambda df: np.where(
+                    ((df['close'] / df['close'].shift(price_change_lookback) - 1) * 100 > price_change_threshold),
+                    True, False
+                )
+            }
+        else:  # Sell Signals
+            signal_definitions = {
+                'MFI超买回落': lambda df: np.where(
+                    (df['INDC_MFI'].rolling(window=signal_window).max() > 70) &
+                    (df['INDC_MFI_SLOPE'] < -slope_threshold),
+                    True, False
+                ),
+                'OBV熊背离': lambda df: np.where(
+                    (df['close'] > df['close'].shift(1)) &
+                    (df['INDC_OBV'] < df['INDC_OBV'].shift(1)),
+                    True, False
+                ),
+                'Shooting_Star': lambda df: df['Shooting_Star'],
+                'Evening_Star': lambda df: df['Evening_Star'],
+                'Bearish_Engulfing': lambda df: df['Bearish_Engulfing'],
+                'Volume_Surge': lambda df: df['Volume_Surge'],
+                'MFI顶背离': lambda df: np.where(
+                    (df['close'] > df['close'].shift(1)) &
+                    (df['INDC_MFI'] < df['INDC_MFI'].shift(1)) &
+                    (df['INDC_MFI'] > 70),
+                    True, False
+                )
+            }
 
-        df['MFI超买回落'] = np.where(
-            (df['INDC_MFI'].rolling(window=signal_window).max() > 70) &
-            (df['INDC_MFI_SLOPE'] < -slope_threshold),
-            True, False
-        )
-
-        df['MFI顶背离'] = np.where(
-            (df['close'] > df['close'].shift(1)) &
-            (df['INDC_MFI'] < df['INDC_MFI'].shift(1)) &
-            (df['INDC_MFI'] > 70),
-            True, False
-        )
-
-        df['OBV熊背离'] = np.where(
-            (df['close'] > df['close'].shift(1)) &
-            (df['INDC_OBV'] < df['INDC_OBV'].shift(1)),
-            True, False
-        )
-
-        df['价格上涨'] = np.where(
-            ((df['close'] / df['close'].shift(price_change_lookback) - 1) * 100 > price_change_threshold),
-            True, False
-        )
-
-        df['成交量增加'] = df['volume'] > df['volume'].shift(1)
+        # Calculate only the selected signals
+        for signal in selected_signals:
+            if signal in signal_definitions:
+                df[signal] = signal_definitions[signal](df)
 
         self.data = df.dropna()
 
-    def create_figures(self, df):
-        # Columns needed for the heatmaps
+    def create_figures(self, df, selected_signals=None, signal_mode="Buy Signals"):
+        selected_signals = selected_signals or []
         buy_cols = ['均线支持', 'MFI超卖反弹', 'Hammer', 'Morning_Star', 'Bullish_Engulfing', 'Volume_Surge', '价格上涨']
         sell_cols = ['MFI超买回落', 'OBV熊背离', 'Shooting_Star', 'Evening_Star', 'Bearish_Engulfing', 'Volume_Surge', 'MFI顶背离']
-        if not all(col in df.columns for col in buy_cols + sell_cols):
-            missing = set(buy_cols + sell_cols) - set(df.columns)
-            raise ValueError(f"Missing columns: {missing}")
+        
+        # Filter signals based on mode and user selection
+        if signal_mode == "Buy Signals":
+            active_cols = [col for col in selected_signals if col in buy_cols and col in df.columns]
+        else:
+            active_cols = [col for col in selected_signals if col in sell_cols and col in df.columns]
+
+        if not active_cols:
+            raise ValueError(f"No valid signals selected for {signal_mode}")
 
         # Use numeric index for the x-axis in all plots
         x_idx = np.arange(len(df))
-        # Keep readable time in hover (if index is datetime-like)
         try:
             time_str = pd.to_datetime(df.index).strftime('%Y-%m-%d %H:%M')
         except Exception:
-            # Fallback in case index is not datetime-like
             time_str = df.index.astype(str)
-        # For candlestick hovertemplate we can use customdata as 2D array
         customdata_ts = np.column_stack([time_str])
 
-        buy_data = df[buy_cols].astype(int).T
-        sell_data = df[sell_cols].astype(int).T
-
-        # Create candlestick figure with auto-ranging y-axis on zoom
+        # Create candlestick figure
         fig_candle = go.Figure(data=[go.Candlestick(
             x=x_idx,
             open=df['open'],
@@ -233,33 +247,47 @@ class MarketAnalyzer:
             )
         )
 
-        # Add red upward arrows for bullish candle patterns
-        bullish_mask = df['Hammer'] | df['Morning_Star'] | df['Bullish_Engulfing']
-        bullish_indices = np.where(bullish_mask)[0]
-        for i in bullish_indices:
-            fig_candle.add_annotation(
-                x=x_idx[i],
-                y=df.iloc[i]['low'],
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1.5,
-                arrowwidth=2,
-                arrowcolor="red",
-                ax=0,
-                ay=-30  # Offset below the low
-            )
+        # Add annotations for bullish or bearish patterns based on mode
+        if signal_mode == "Buy Signals":
+            bullish_mask = df[active_cols].any(axis=1)
+            bullish_indices = np.where(bullish_mask)[0]
+            for i in bullish_indices:
+                fig_candle.add_annotation(
+                    x=x_idx[i],
+                    y=df.iloc[i]['low'],
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1.5,
+                    arrowwidth=2,
+                    arrowcolor="red",
+                    ax=0,
+                    ay=-30
+                )
+        else:
+            bearish_mask = df[active_cols].any(axis=1)
+            bearish_indices = np.where(bearish_mask)[0]
+            for i in bearish_indices:
+                fig_candle.add_annotation(
+                    x=x_idx[i],
+                    y=df.iloc[i]['high'],
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1.5,
+                    arrowwidth=2,
+                    arrowcolor="blue",
+                    ax=0,
+                    ay=30
+                )
 
-        # Update layout with auto-ranging y-axis
         fig_candle.update_layout(
             height=600,
             width=2000,
-            title_text="Candlestick Chart with MAs (Auto-scaling Y-axis)",
+            title_text=f"Candlestick Chart with MAs ({signal_mode}, Auto-scaling Y-axis)",
             xaxis_title="Index",
             yaxis_title="Price",
             xaxis=dict(
                 rangeslider=dict(
                     visible=True,
-                    # This is the key setting for auto-ranging y-axis
                     yaxis=dict(rangemode='match')
                 ),
                 type='linear'
@@ -275,43 +303,29 @@ class MarketAnalyzer:
             margin=dict(l=50, r=50, t=100, b=50),
             showlegend=True,
         )
-
-        # Enable auto-ranging on zoom for the main plot area as well
         fig_candle.update_xaxes(rangeslider_yaxis_rangemode='match')
 
         # Create multiplot subplots
         fig_multi = make_subplots(
-            rows=4, cols=1,
+            rows=3, cols=1,
             shared_xaxes=True,
-            row_heights=[0.25, 0.25, 0.25, 0.25],
+            row_heights=[0.3, 0.3, 0.4],
             vertical_spacing=0.03,
-            subplot_titles=("Buy Signal Heatmap", "Sell Signal Heatmap", "MFI", "Volume")
+            subplot_titles=(f"{signal_mode} Heatmap", "MFI", "Volume")
         )
 
-        # Plot buy heatmap
+        # Plot signal heatmap
+        signal_data = df[active_cols].astype(int).T
         fig_multi.add_trace(
             go.Heatmap(
-                z=buy_data.values,
+                z=signal_data.values,
                 x=x_idx,
-                y=buy_data.index,
-                colorscale='YlGnBu',
+                y=signal_data.index,
+                colorscale='YlGnBu' if signal_mode == "Buy Signals" else 'YlOrRd',
                 showscale=True,
-                colorbar=dict(title='Buy Signal'),
+                colorbar=dict(title=signal_mode),
             ),
             row=1, col=1
-        )
-
-        # Plot sell heatmap
-        fig_multi.add_trace(
-            go.Heatmap(
-                z=sell_data.values,
-                x=x_idx,
-                y=sell_data.index,
-                colorscale='YlOrRd',
-                showscale=True,
-                colorbar=dict(title='Sell Signal'),
-            ),
-            row=2, col=1
         )
 
         # Plot MFI
@@ -325,12 +339,12 @@ class MarketAnalyzer:
                 customdata=time_str,
                 hovertemplate="Index: %{x}<br>Time: %{customdata}<br>MFI: %{y:.2f}<extra></extra>"
             ),
-            row=3, col=1
+            row=2, col=1
         )
 
         # Overbought/oversold lines
-        fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
-        fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
+        fig_multi.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+        fig_multi.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
 
         # Plot Volume
         fig_multi.add_trace(
@@ -342,23 +356,20 @@ class MarketAnalyzer:
                 customdata=time_str,
                 hovertemplate="Index: %{x}<br>Time: %{customdata}<br>Volume: %{y}<extra></extra>"
             ),
-            row=4, col=1
+            row=3, col=1
         )
 
-        # Update layout for better appearance
         fig_multi.update_layout(
-            height=1400,
+            height=1200,
             width=2000,
-            title_text="Buy and Sell Signal Heatmaps, MFI, Volume",
-            xaxis4_title="Index",
-            yaxis_title="Buy Signals",
-            yaxis2_title="Sell Signals",
-            yaxis3_title="MFI",
-            yaxis4_title="Volume",
+            title_text=f"{signal_mode}, MFI, Volume",
+            xaxis3_title="Index",
+            yaxis_title=signal_mode,
+            yaxis2_title="MFI",
+            yaxis3_title="Volume",
             yaxis=dict(autorange=True),
             yaxis2=dict(autorange=True),
             yaxis3=dict(autorange=True),
-            yaxis4=dict(autorange=True),
             xaxis_rangeslider_visible=False,
             hovermode="x unified",
             dragmode="zoom",
